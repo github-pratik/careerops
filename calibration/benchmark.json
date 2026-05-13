@@ -1,0 +1,187 @@
+{
+  "_instructions": "Day 3 calibration benchmark. Add 20 job descriptions before testing Gemini. Run all through the Gemini Code node and verify: match=true jobs score >=70, match=false jobs score <50. Do not go live until benchmark passes.",
+  "_threshold": 70,
+  "_go_live_gate": "All match=true jobs score >= 60 (warn if any < 70). All match=false jobs score < 55.",
+  "jobs": [
+    {
+      "id": "bench_001",
+      "match": true,
+      "notes": "Perfect match — AI Engineer, entry-level, remote, mentions OPT",
+      "title": "AI Engineer (New Grad / Entry Level)",
+      "company": "Google",
+      "location": "Remote, USA",
+      "description": "We are looking for a passionate AI Engineer to join our team. 0-2 years of experience required. BS/MS in Computer Science or related field. Skills: Python, TensorFlow, PyTorch. We welcome OPT/CPT candidates and provide H-1B sponsorship for qualified applicants."
+    },
+    {
+      "id": "bench_002",
+      "match": true,
+      "notes": "Good match — Software Engineer, new grad, NoVA location",
+      "title": "Software Engineer I - New Graduate",
+      "company": "Amazon",
+      "location": "Arlington, VA",
+      "description": "Amazon is hiring new grad Software Engineers for our AWS team in Arlington, VA (HQ2). Recent BS/MS graduates welcome. Experience with Java, Python, or C++. No prior work experience required. We sponsor H-1B visas."
+    },
+    {
+      "id": "bench_003",
+      "match": true,
+      "notes": "Good match — Full Stack, entry-level, remote",
+      "title": "Full Stack Developer - Entry Level",
+      "company": "Microsoft",
+      "location": "Remote",
+      "description": "Join Microsoft as a Full Stack Developer. 0-1 years experience preferred. React, Node.js, TypeScript required. New graduates encouraged to apply. We sponsor work visas including H-1B."
+    },
+    {
+      "id": "bench_004",
+      "match": true,
+      "notes": "AI/ML Engineer, entry-level, DC area",
+      "title": "Machine Learning Engineer - Recent Graduate",
+      "company": "Meta",
+      "location": "Washington DC",
+      "description": "Meta is seeking ML Engineers who recently graduated. 0-2 years experience. Strong Python, ML frameworks (PyTorch/TensorFlow). OPT welcome. H-1B sponsorship available."
+    },
+    {
+      "id": "bench_005",
+      "match": true,
+      "notes": "Backend engineer, entry, remote, no explicit visa mention but H-1B company",
+      "title": "Software Engineer, Backend - New Grad 2024/2025",
+      "company": "Nvidia",
+      "location": "Remote - United States",
+      "description": "Nvidia is looking for new grad Backend Engineers. Python, C++, distributed systems fundamentals. Masters or PhD preferred but not required. Relocation assistance available."
+    },
+    {
+      "id": "bench_006",
+      "match": true,
+      "notes": "Entry SWE, hybrid DC/NoVA, H-1B company",
+      "title": "Associate Software Engineer",
+      "company": "Deloitte",
+      "location": "McLean, VA (Hybrid)",
+      "description": "Deloitte Technology is hiring Associate Software Engineers in our McLean, VA office. 0-2 years experience, BS/MS required. Java, Python, cloud (AWS/Azure). New grads welcome."
+    },
+    {
+      "id": "bench_007",
+      "match": true,
+      "notes": "AI engineer, startup, remote, explicitly OPT-friendly",
+      "title": "AI/LLM Engineer (Entry Level)",
+      "company": "Databricks",
+      "location": "Remote, USA",
+      "description": "Databricks is building the AI platform of the future. We need entry-level AI/LLM engineers with Python, LangChain, and vector database experience. OPT/CPT candidates welcome. Visa sponsorship provided."
+    },
+    {
+      "id": "bench_008",
+      "match": true,
+      "notes": "Full stack, entry, NYC remote",
+      "title": "Junior Full Stack Engineer",
+      "company": "Goldman Sachs",
+      "location": "Remote",
+      "description": "Goldman Sachs Engineering is hiring junior full stack developers. React, TypeScript, Node.js required. BS CS required, 0-1 year experience. Great mentorship program for new grads."
+    },
+    {
+      "id": "bench_009",
+      "match": true,
+      "notes": "SWE, entry, hybrid NoVA, no visa mention",
+      "title": "Software Engineer I",
+      "company": "Palantir",
+      "location": "McLean, VA (Hybrid)",
+      "description": "Palantir Technologies is seeking Software Engineers to work on our Foundry platform. 0-2 years experience. Strong CS fundamentals, Python or Java. Recent graduates encouraged. No security clearance required for this role."
+    },
+    {
+      "id": "bench_010",
+      "match": true,
+      "notes": "ML role, entry, remote, H-1B company",
+      "title": "Machine Learning Engineer I",
+      "company": "Snowflake",
+      "location": "Remote, USA",
+      "description": "Join Snowflake's ML platform team. Entry-level ML engineer position. Python, SQL, ML fundamentals. MS CS or equivalent experience. We welcome international candidates and sponsor H-1B visas."
+    },
+    {
+      "id": "bench_011",
+      "match": false,
+      "notes": "NOT a match — senior role, 5+ years required",
+      "title": "Senior Software Engineer - Platform",
+      "company": "Google",
+      "location": "Remote",
+      "description": "We are looking for an experienced Senior Software Engineer with 5+ years of experience in distributed systems. Deep expertise in Go, Kubernetes, and large-scale systems design required."
+    },
+    {
+      "id": "bench_012",
+      "match": false,
+      "notes": "NOT a match — security clearance required",
+      "title": "Software Engineer - TS/SCI Clearance Required",
+      "company": "Leidos",
+      "location": "Reston, VA",
+      "description": "Leidos is seeking a Software Engineer for our defense programs. Active TS/SCI security clearance is required. US Citizenship required. No exceptions. 3+ years experience."
+    },
+    {
+      "id": "bench_013",
+      "match": false,
+      "notes": "NOT a match — unrelated domain (healthcare, no tech)",
+      "title": "Healthcare Data Analyst",
+      "company": "CVS Health",
+      "location": "Remote",
+      "description": "CVS Health is seeking a data analyst for our pharmacy benefits division. Excel, Tableau, SQL required. Healthcare experience preferred. No programming required."
+    },
+    {
+      "id": "bench_014",
+      "match": false,
+      "notes": "NOT a match — senior, 7+ years",
+      "title": "Principal Software Engineer",
+      "company": "Amazon",
+      "location": "Seattle, WA",
+      "description": "Amazon is looking for a Principal Software Engineer to lead our distributed systems team. 7+ years of experience required. Strong leadership and system design skills."
+    },
+    {
+      "id": "bench_015",
+      "match": false,
+      "notes": "NOT a match — non-US location",
+      "title": "Software Engineer, AI",
+      "company": "Google",
+      "location": "Bangalore, India",
+      "description": "Google India is hiring AI engineers. 0-2 years experience. Python, ML frameworks. Great opportunity in our Bangalore office."
+    },
+    {
+      "id": "bench_016",
+      "match": false,
+      "notes": "NOT a match — product manager, not engineering",
+      "title": "Product Manager, AI Products",
+      "company": "Microsoft",
+      "location": "Remote",
+      "description": "Microsoft is hiring a Product Manager to define the roadmap for our AI-powered Copilot features. MBA preferred, 3+ years PM experience required."
+    },
+    {
+      "id": "bench_017",
+      "match": false,
+      "notes": "NOT a match — DevOps/SRE, not AI/SWE/Full Stack",
+      "title": "Site Reliability Engineer",
+      "company": "Cloudflare",
+      "location": "Remote",
+      "description": "Cloudflare SRE role. 3+ years managing large-scale infrastructure. Kubernetes, Terraform, Linux systems administration. On-call rotation required."
+    },
+    {
+      "id": "bench_018",
+      "match": false,
+      "notes": "NOT a match — US Citizen only",
+      "title": "Software Developer - Federal Programs",
+      "company": "Booz Allen Hamilton",
+      "location": "Reston, VA",
+      "description": "US Citizenship required. Work on federal government contracts. 2+ years Java development. Must be able to obtain security clearance."
+    },
+    {
+      "id": "bench_019",
+      "match": false,
+      "notes": "NOT a match — senior ML, 4+ years",
+      "title": "Senior Machine Learning Engineer",
+      "company": "Meta",
+      "location": "Remote",
+      "description": "Meta AI Research is looking for a Senior ML Engineer with 4+ years of deep learning experience. PhD in CS or related field preferred. PyTorch expertise required."
+    },
+    {
+      "id": "bench_020",
+      "match": false,
+      "notes": "NOT a match — data engineer, 3+ years, no entry-level signals",
+      "title": "Data Engineer",
+      "company": "Spotify",
+      "location": "New York, NY",
+      "description": "Spotify's data platform team is hiring an experienced Data Engineer. 3+ years with Spark, Kafka, and Airflow required. Strong experience with data pipelines at scale."
+    }
+  ]
+}

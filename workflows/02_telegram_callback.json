@@ -1,0 +1,271 @@
+{
+  "name": "02 – Telegram Callbacks",
+  "nodes": [
+    {
+      "id": "webhook-tg-1",
+      "name": "Telegram Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "telegram-callback",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "telegram-callback",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "parse-callback-1",
+      "name": "Parse Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst cbQuery = body.callback_query;\n\nif (!cbQuery) {\n  return [{ json: { valid: false, reason: 'no callback_query' } }];\n}\n\nconst data = cbQuery.data || '';\nconst parts = data.split(':');\nconst action = parts[0]; // 'approve' or 'skip'\nconst jobId = parts[1] || '';\n\nreturn [{\n  json: {\n    valid: true,\n    action,\n    jobId,\n    callbackQueryId: cbQuery.id,\n    chatId: cbQuery.message?.chat?.id,\n    messageId: cbQuery.message?.message_id,\n    userFirstName: cbQuery.from?.first_name || 'you'\n  }\n}];"
+      }
+    },
+    {
+      "id": "check-valid-1",
+      "name": "Valid Callback?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "valid-1",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "get-state-tg-1",
+      "name": "Get Telegram Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 220],
+      "parameters": {
+        "method": "GET",
+        "url": "https://kwxaxpjxdquuxetlyoly.supabase.co/rest/v1/system_state?key=in.(telegram_token)&select=key,value",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "is-approve-1",
+      "name": "Approve or Skip?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 220],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "action-1",
+              "leftValue": "={{ $('Parse Callback').first().json.action }}",
+              "rightValue": "approve",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "set-approved-1",
+      "name": "Update: approved",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 160],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://kwxaxpjxdquuxetlyoly.supabase.co/rest/v1/jobs?id=eq.{{ $('Parse Callback').first().json.jobId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"approved\"}",
+        "options": {}
+      }
+    },
+    {
+      "id": "log-approval-1",
+      "name": "Log Approval",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 160],
+      "parameters": {
+        "method": "POST",
+        "url": "https://kwxaxpjxdquuxetlyoly.supabase.co/rest/v1/approvals",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { job_id: $('Parse Callback').first().json.jobId } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "set-skipped-1",
+      "name": "Update: skipped",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 320],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://kwxaxpjxdquuxetlyoly.supabase.co/rest/v1/jobs?id=eq.{{ $('Parse Callback').first().json.jobId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"skipped\"}",
+        "options": {}
+      }
+    },
+    {
+      "id": "answer-callback-1",
+      "name": "Answer Callback Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 240],
+      "parameters": {
+        "jsCode": "const cb = $('Parse Callback').first().json;\nconst action = cb.action;\nconst tgConfig = $('Get Telegram Config').first().json;\nconst token = tgConfig.value || '';\n\n// Acknowledge the callback query so the loading spinner stops\nconst ackUrl = `https://api.telegram.org/bot${token}/answerCallbackQuery`;\nconst text = action === 'approve' ? '✅ Added to apply list!' : '❌ Skipped!';\n\n// Build both requests to run\nreturn [{\n  json: {\n    ackUrl,\n    ackBody: { callback_query_id: cb.callbackQueryId, text, show_alert: false },\n    editUrl: `https://api.telegram.org/bot${token}/editMessageReplyMarkup`,\n    editBody: { chat_id: cb.chatId, message_id: cb.messageId, reply_markup: { inline_keyboard: [] } }\n  }\n}];"
+      }
+    },
+    {
+      "id": "ack-telegram-1",
+      "name": "Ack Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 180],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.ackUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.ackBody }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "edit-buttons-1",
+      "name": "Remove Buttons",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 320],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Answer Callback Query').first().json.editUrl }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Answer Callback Query').first().json.editBody }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "respond-ok-1",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2220, 240],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": { "responseCode": 200 }
+      }
+    },
+    {
+      "id": "respond-ignore-1",
+      "name": "Respond 200 (ignore)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 400],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": { "responseCode": 200 }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Webhook": {
+      "main": [[{ "node": "Parse Callback", "type": "main", "index": 0 }]]
+    },
+    "Parse Callback": {
+      "main": [[{ "node": "Valid Callback?", "type": "main", "index": 0 }]]
+    },
+    "Valid Callback?": {
+      "main": [
+        [{ "node": "Get Telegram Config", "type": "main", "index": 0 }],
+        [{ "node": "Respond 200 (ignore)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Telegram Config": {
+      "main": [[{ "node": "Approve or Skip?", "type": "main", "index": 0 }]]
+    },
+    "Approve or Skip?": {
+      "main": [
+        [{ "node": "Update: approved", "type": "main", "index": 0 }],
+        [{ "node": "Update: skipped", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update: approved": {
+      "main": [[{ "node": "Log Approval", "type": "main", "index": 0 }]]
+    },
+    "Log Approval": {
+      "main": [[{ "node": "Answer Callback Query", "type": "main", "index": 0 }]]
+    },
+    "Update: skipped": {
+      "main": [[{ "node": "Answer Callback Query", "type": "main", "index": 0 }]]
+    },
+    "Answer Callback Query": {
+      "main": [[{ "node": "Ack Telegram", "type": "main", "index": 0 }]]
+    },
+    "Ack Telegram": {
+      "main": [[{ "node": "Remove Buttons", "type": "main", "index": 0 }]]
+    },
+    "Remove Buttons": {
+      "main": [[{ "node": "Respond 200", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "active": false,
+  "meta": { "templateCredsSetupCompleted": true }
+}

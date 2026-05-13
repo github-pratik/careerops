@@ -1,0 +1,150 @@
+{
+  "name": "03 – Weekly Email Digest",
+  "nodes": [
+    {
+      "id": "schedule-digest-1",
+      "name": "Every Monday 8am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [1],
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "get-config-digest-1",
+      "name": "Get Email Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "https://kwxaxpjxdquuxetlyoly.supabase.co/rest/v1/system_state?key=in.(resend_api_key,digest_email,telegram_token)&select=key,value",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "get-approved-jobs-1",
+      "name": "Get Approved Jobs (7d)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://kwxaxpjxdquuxetlyoly.supabase.co/rest/v1/jobs?status=eq.approved&seen_at=gte.{{ new Date(Date.now() - 7*24*60*60*1000).toISOString() }}&select=id,company,title,url,score,location,posted_at,seen_at&order=score.desc",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "check-has-jobs-1",
+      "name": "Any Approved Jobs?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "has-jobs-1",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "build-email-1",
+      "name": "Build HTML Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 220],
+      "parameters": {
+        "jsCode": "const jobs = $input.all();\nconst cfgItems = $('Get Email Config').all();\nconst cfg = {};\nfor (const item of cfgItems) cfg[item.json.key] = item.json.value;\n\nconst jobRows = jobs.map(j => `\n  <tr>\n    <td style=\"padding:8px 12px;border-bottom:1px solid #eee\">\n      <a href=\"${j.json.url}\" style=\"color:#1a73e8;font-weight:600\">${j.json.title}</a><br>\n      <small style=\"color:#555\">${j.json.company} · ${j.json.location}</small>\n    </td>\n    <td style=\"padding:8px 12px;border-bottom:1px solid #eee;text-align:center\">\n      <span style=\"background:#4caf50;color:#fff;padding:2px 8px;border-radius:12px;font-size:13px\">${j.json.score || '?'}</span>\n    </td>\n    <td style=\"padding:8px 12px;border-bottom:1px solid #eee;color:#888;font-size:13px\">${j.json.posted_at || ''}</td>\n  </tr>`).join('');\n\nconst html = `<!DOCTYPE html>\n<html>\n<body style=\"font-family:Arial,sans-serif;max-width:700px;margin:0 auto;color:#333\">\n  <h2 style=\"color:#1a73e8\">SmartJob Hunter — Weekly Digest</h2>\n  <p>You approved <strong>${jobs.length} job(s)</strong> this week. Time to apply! 🚀</p>\n  <table style=\"width:100%;border-collapse:collapse\">\n    <thead>\n      <tr style=\"background:#f5f5f5\">\n        <th style=\"padding:8px 12px;text-align:left\">Job</th>\n        <th style=\"padding:8px 12px\">Score</th>\n        <th style=\"padding:8px 12px;text-align:left\">Posted</th>\n      </tr>\n    </thead>\n    <tbody>${jobRows}</tbody>\n  </table>\n  <p style=\"color:#888;font-size:12px;margin-top:24px\">Generated by SmartJob Hunter · Supabase + n8n + Gemini</p>\n</body>\n</html>`;\n\nreturn [{\n  json: {\n    html,\n    to: cfg.digest_email || '',\n    resendKey: cfg.resend_api_key || '',\n    count: jobs.length\n  }\n}];"
+      }
+    },
+    {
+      "id": "send-email-1",
+      "name": "Send via Resend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 220],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $json.resendKey }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  from: 'SmartJob Hunter <onboarding@resend.dev>',\n  to: [$json.to],\n  subject: `SmartJob Digest — ${$json.count} jobs to apply (${new Date().toLocaleDateString('en-US', {month:'short', day:'numeric'})})`,\n  html: $json.html\n} }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "no-jobs-1",
+      "name": "No Jobs This Week",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1120, 400],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Every Monday 8am": {
+      "main": [[{ "node": "Get Email Config", "type": "main", "index": 0 }]]
+    },
+    "Get Email Config": {
+      "main": [[{ "node": "Get Approved Jobs (7d)", "type": "main", "index": 0 }]]
+    },
+    "Get Approved Jobs (7d)": {
+      "main": [[{ "node": "Any Approved Jobs?", "type": "main", "index": 0 }]]
+    },
+    "Any Approved Jobs?": {
+      "main": [
+        [{ "node": "Build HTML Email", "type": "main", "index": 0 }],
+        [{ "node": "No Jobs This Week", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build HTML Email": {
+      "main": [[{ "node": "Send via Resend", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "active": false,
+  "meta": { "templateCredsSetupCompleted": true }
+}

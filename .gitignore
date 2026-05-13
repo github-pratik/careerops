@@ -1,0 +1,4 @@
+.env
+*.env.local
+n8n_data/
+keys.local.md

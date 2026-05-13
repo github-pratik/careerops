@@ -1,0 +1,66 @@
+version: "3.8"
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - smartjob
+    depends_on:
+      - n8n
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    environment:
+      # Public URL (must match your domain)
+      - N8N_HOST=${DOMAIN}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://${DOMAIN}/
+      - N8N_EDITOR_BASE_URL=https://${DOMAIN}/
+
+      # Database — Supabase Postgres (direct connection, port 5432)
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=${SUPABASE_DB_HOST}
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=postgres
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=${SUPABASE_DB_PASSWORD}
+      - DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED=false
+
+      # Security
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+
+      # Performance — prevent OOM on 2GB Droplet
+      - EXECUTIONS_PROCESS=main
+      - N8N_CONCURRENCY_PRODUCTION_LIMIT=5
+
+      # Execution data — keep errors only, prune after 7 days
+      # (uncomment when Supabase storage approaches 400MB — see TODOS.md TODO-01)
+      # - EXECUTIONS_DATA_SAVE_ON_SUCCESS=none
+      # - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      # - EXECUTIONS_DATA_PRUNE=true
+      # - EXECUTIONS_DATA_MAX_AGE=168
+
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - smartjob
+
+volumes:
+  n8n_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  smartjob:
+    driver: bridge

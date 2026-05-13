@@ -1,0 +1,534 @@
+{
+  "name": "01 – Scan & Score Jobs",
+  "nodes": [
+    {
+      "id": "schedule-1",
+      "name": "Every 6 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "hours", "hoursInterval": 6 }]
+        }
+      }
+    },
+    {
+      "id": "get-state-1",
+      "name": "Get System State",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "system_state",
+        "returnAll": true
+      },
+      "credentials": {
+        "supabaseApi": { "id": "SupabaseAPI00001", "name": "Supabase API" }
+      }
+    },
+    {
+      "id": "parse-config-1",
+      "name": "Parse Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "parameters": {
+        "jsCode": "// Build a config object from key/value rows\nconst state = {};\nfor (const item of $input.all()) {\n  state[item.json.key] = item.json.value;\n}\n\nconst cfg = {\n  profile: JSON.parse(state.profile_json || '{}'),\n  companies: JSON.parse(state.h1b_companies_json || '[]'),\n  tier2Index: parseInt(state.tier2_index || '0', 10),\n  threshold: parseInt(state.score_threshold || '70', 10),\n  jsearchKey: state.jsearch_api_key || '',\n  jsearchDisabledUntil: state.jsearch_disabled_until || '2000-01-01',\n  telegramToken: state.telegram_token || '',\n  telegramChatId: state.telegram_chat_id || ''\n};\n\nconst disabledUntil = new Date(cfg.jsearchDisabledUntil);\nconst now = new Date();\ncfg.jsearchEnabled = cfg.jsearchKey && cfg.jsearchKey !== 'REPLACE_WITH_RAPIDAPI_KEY' && now > disabledUntil;\n\nreturn [{ json: cfg }];"
+      }
+    },
+    {
+      "id": "check-enabled-1",
+      "name": "JSearch Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "cond-1",
+              "leftValue": "={{ $json.jsearchEnabled }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "build-searches-1",
+      "name": "Build Search List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 220],
+      "parameters": {
+        "jsCode": "const cfg = $input.first().json;\nconst roles = cfg.profile.roles || ['Software Engineer'];\nconst tier1 = cfg.companies.filter(c => c.tier === 1);\nconst tier2 = cfg.companies.filter(c => c.tier === 2);\nconst nextTier2 = tier2[cfg.tier2Index % tier2.length] || null;\n\nconst searches = [];\n// All tier-1 companies x each role\nfor (const co of tier1) {\n  for (const role of roles) {\n    searches.push({ company: co.search_name, role, tier: 1, cfg });\n  }\n}\n// One tier-2 company (round-robin)\nif (nextTier2) {\n  for (const role of roles) {\n    searches.push({ company: nextTier2.search_name, role, tier: 2, cfg });\n  }\n}\nreturn searches.map(s => ({ json: s }));"
+      }
+    },
+    {
+      "id": "loop-searches-1",
+      "name": "Loop Searches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1340, 220],
+      "parameters": { "batchSize": 1, "options": {} }
+    },
+    {
+      "id": "jsearch-1",
+      "name": "JSearch API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 220],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "https://jsearch.p.rapidapi.com/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-RapidAPI-Key", "value": "={{ $json.cfg.jsearchKey }}" },
+            { "name": "X-RapidAPI-Host", "value": "jsearch.p.rapidapi.com" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "query", "value": "={{ $json.role }} {{ $json.company }}" },
+            { "name": "page", "value": "1" },
+            { "name": "num_pages", "value": "1" },
+            { "name": "date_posted", "value": "week" }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      }
+    },
+    {
+      "id": "parse-jobs-1",
+      "name": "Parse Job Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 220],
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst jobs = data.data || [];\nconst prev = $('Loop Searches').first().json;\nconst cfg = prev.cfg;\n\nreturn jobs.map(j => ({\n  json: {\n    id: j.job_id,\n    company: j.employer_name,\n    title: j.job_title,\n    url: j.job_apply_link || j.job_google_link,\n    location: j.job_city ? `${j.job_city}, ${j.job_state}` : (j.job_country || 'Remote'),\n    source: 'jsearch',\n    posted_at: j.job_posted_at_datetime_utc ? j.job_posted_at_datetime_utc.slice(0,10) : null,\n    description: (j.job_description || '').slice(0, 3000),\n    cfg\n  }\n}));"
+      }
+    },
+    {
+      "id": "upsert-jobs-1",
+      "name": "Upsert Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 220],
+      "parameters": {
+        "method": "POST",
+        "url": "https://kwxaxpjxdquuxetlyoly.supabase.co/rest/v1/jobs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=ignore-duplicates,return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { id: $json.id, company: $json.company, title: $json.title, url: $json.url, location: $json.location, source: $json.source, posted_at: $json.posted_at } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "done-loop-1",
+      "name": "Done Scanning?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2220, 220],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "loop-done",
+              "leftValue": "={{ $('Loop Searches').context.noItemsLeft }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "update-tier2-1",
+      "name": "Advance Tier2 Index",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2440, 180],
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://kwxaxpjxdquuxetlyoly.supabase.co/rest/v1/system_state?key=eq.tier2_index",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { value: String(($('Parse Config').first().json.tier2Index + 1) % $('Parse Config').first().json.companies.filter(c => c.tier === 2).length) } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "get-pending-1",
+      "name": "Get Pending Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2660, 180],
+      "parameters": {
+        "method": "GET",
+        "url": "https://kwxaxpjxdquuxetlyoly.supabase.co/rest/v1/jobs?status=eq.pending&select=id,company,title,url,location,posted_at",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "loop-jobs-1",
+      "name": "Loop Jobs",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [2880, 180],
+      "parameters": { "batchSize": 1, "options": {} }
+    },
+    {
+      "id": "build-prompt-1",
+      "name": "Build Score Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3100, 180],
+      "parameters": {
+        "jsCode": "const job = $input.first().json;\nconst cfg = $('Parse Config').first().json;\nconst profile = cfg.profile;\n\nconst prompt = `You are a job match scorer for a job seeker with the following profile:\n${JSON.stringify(profile, null, 2)}\n\nRate this job posting on a scale of 0-100 for match quality:\n- Title: ${job.title}\n- Company: ${job.company}\n- Location: ${job.location}\n\nScoring guide:\n90-100: Perfect match (exact role, H1B company, good location)\n70-89: Strong match (right domain, minor gaps)\n50-69: Decent match (related role or some gap)\n0-49: Weak match\n\nRespond ONLY with valid JSON: {\"score\": <number>, \"reason\": \"<one sentence>\"}`;\n\nreturn [{ json: { job, cfg, prompt, threshold: cfg.threshold } }];"
+      }
+    },
+    {
+      "id": "gemini-score-1",
+      "name": "Score – Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3320, 100],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { contents: [{ parts: [{ text: $json.prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 200 } } }}",
+        "options": { "timeout": 20000 }
+      },
+      "credentials": {
+        "googlePalmApi": { "id": "PJKDW19fNu0t9njE", "name": "Google Gemini(PaLM) Api account" }
+      }
+    },
+    {
+      "id": "groq-score-1",
+      "name": "Score – Groq",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3320, 260],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "groqApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: $('Build Score Prompt').first().json.prompt }], max_tokens: 200, temperature: 0.1 } }}",
+        "options": { "timeout": 20000 }
+      },
+      "credentials": {
+        "groqApi": { "id": "uPBmhptgAWdFHG4h", "name": "Groq account" }
+      }
+    },
+    {
+      "id": "cerebras-score-1",
+      "name": "Score – Cerebras",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3320, 420],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cerebras.ai/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { model: 'llama3.1-8b', messages: [{ role: 'user', content: $('Build Score Prompt').first().json.prompt }], max_tokens: 200, temperature: 0.1 } }}",
+        "options": { "timeout": 20000 }
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "cAm7WJVV2NJC5krO", "name": "Cerebras" }
+      }
+    },
+    {
+      "id": "extract-gemini-1",
+      "name": "Extract Score (Gemini)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3560, 100],
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst text = resp.candidates?.[0]?.content?.parts?.[0]?.text || '';\ntry {\n  const m = text.match(/\\{[^}]+\\}/);\n  const parsed = JSON.parse(m ? m[0] : text);\n  return [{ json: { score: parsed.score || 0, reason: parsed.reason || '', source: 'gemini', job: $('Build Score Prompt').first().json.job, cfg: $('Build Score Prompt').first().json.cfg, threshold: $('Build Score Prompt').first().json.threshold } }];\n} catch(e) {\n  return [{ json: { score: 0, reason: 'parse error', source: 'gemini', job: $('Build Score Prompt').first().json.job, cfg: $('Build Score Prompt').first().json.cfg, threshold: $('Build Score Prompt').first().json.threshold } }];\n}"
+      }
+    },
+    {
+      "id": "extract-groq-1",
+      "name": "Extract Score (Groq)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3560, 260],
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst text = resp.choices?.[0]?.message?.content || '';\ntry {\n  const m = text.match(/\\{[^}]+\\}/);\n  const parsed = JSON.parse(m ? m[0] : text);\n  return [{ json: { score: parsed.score || 0, reason: parsed.reason || '', source: 'groq', job: $('Build Score Prompt').first().json.job, cfg: $('Build Score Prompt').first().json.cfg, threshold: $('Build Score Prompt').first().json.threshold } }];\n} catch(e) {\n  return [{ json: { score: 0, reason: 'parse error', source: 'groq', job: $('Build Score Prompt').first().json.job, cfg: $('Build Score Prompt').first().json.cfg, threshold: $('Build Score Prompt').first().json.threshold } }];\n}"
+      }
+    },
+    {
+      "id": "extract-cerebras-1",
+      "name": "Extract Score (Cerebras)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3560, 420],
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst text = resp.choices?.[0]?.message?.content || '';\ntry {\n  const m = text.match(/\\{[^}]+\\}/);\n  const parsed = JSON.parse(m ? m[0] : text);\n  return [{ json: { score: parsed.score || 0, reason: parsed.reason || '', source: 'cerebras', job: $('Build Score Prompt').first().json.job, cfg: $('Build Score Prompt').first().json.cfg, threshold: $('Build Score Prompt').first().json.threshold } }];\n} catch(e) {\n  return [{ json: { score: 0, reason: 'fallback default', source: 'cerebras', job: $('Build Score Prompt').first().json.job, cfg: $('Build Score Prompt').first().json.cfg, threshold: $('Build Score Prompt').first().json.threshold } }];\n}"
+      }
+    },
+    {
+      "id": "check-threshold-1",
+      "name": "Score >= Threshold?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3780, 260],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "thresh-1",
+              "leftValue": "={{ $json.score }}",
+              "rightValue": "={{ $json.threshold }}",
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "update-score-notified-1",
+      "name": "Set Status: notified",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [4000, 180],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://kwxaxpjxdquuxetlyoly.supabase.co/rest/v1/jobs?id=eq.{{ $json.job.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { score: $json.score, status: 'notified' } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "send-telegram-1",
+      "name": "Send Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [4220, 180],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $('Extract Score (Gemini)').first()?.json?.cfg?.telegramToken || $('Extract Score (Groq)').first()?.json?.cfg?.telegramToken || $('Extract Score (Cerebras)').first()?.json?.cfg?.telegramToken }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  chat_id: $json.cfg.telegramChatId,\n  text: `🎯 *Score: ${$('Check Threshold').first().json.score}/100* — ${$('Check Threshold').first().json.source}\\n\\n*${$('Check Threshold').first().json.job.title}*\\n🏢 ${$('Check Threshold').first().json.job.company}\\n📍 ${$('Check Threshold').first().json.job.location}\\n\\n_${$('Check Threshold').first().json.reason}_`,\n  parse_mode: 'Markdown',\n  reply_markup: {\n    inline_keyboard: [[\n      { text: '✅ YES – Apply', callback_data: `approve:${$('Check Threshold').first().json.job.id}` },\n      { text: '❌ NO – Skip', callback_data: `skip:${$('Check Threshold').first().json.job.id}` }\n    ]]\n  }\n} }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "log-telegram-1",
+      "name": "Log Telegram Msg",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [4440, 180],
+      "parameters": {
+        "method": "POST",
+        "url": "https://kwxaxpjxdquuxetlyoly.supabase.co/rest/v1/approvals",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { job_id: $('Check Threshold').first().json.job.id, telegram_msg_id: $json.result?.message_id || 0 } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "update-score-skipped-1",
+      "name": "Set Status: skipped",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [4000, 380],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://kwxaxpjxdquuxetlyoly.supabase.co/rest/v1/jobs?id=eq.{{ $json.job.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3eGF4cGp4ZHF1dXhldGx5b2x5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjExNTQsImV4cCI6MjA5MzM5NzE1NH0.d12qP6mvBUqL3vhBjqxlO-k0ewsU0YQDAM54QpBDbO4" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { score: $json.score, status: 'skipped' } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "loop-again-1",
+      "name": "Next Job",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [4660, 280],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Every 6 Hours": {
+      "main": [[{ "node": "Get System State", "type": "main", "index": 0 }]]
+    },
+    "Get System State": {
+      "main": [[{ "node": "Parse Config", "type": "main", "index": 0 }]]
+    },
+    "Parse Config": {
+      "main": [[{ "node": "JSearch Enabled?", "type": "main", "index": 0 }]]
+    },
+    "JSearch Enabled?": {
+      "main": [
+        [{ "node": "Build Search List", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Build Search List": {
+      "main": [[{ "node": "Loop Searches", "type": "main", "index": 0 }]]
+    },
+    "Loop Searches": {
+      "main": [[{ "node": "JSearch API", "type": "main", "index": 0 }]]
+    },
+    "JSearch API": {
+      "main": [[{ "node": "Parse Job Results", "type": "main", "index": 0 }]]
+    },
+    "Parse Job Results": {
+      "main": [[{ "node": "Upsert Jobs", "type": "main", "index": 0 }]]
+    },
+    "Upsert Jobs": {
+      "main": [[{ "node": "Done Scanning?", "type": "main", "index": 0 }]]
+    },
+    "Done Scanning?": {
+      "main": [
+        [{ "node": "Advance Tier2 Index", "type": "main", "index": 0 }],
+        [{ "node": "Loop Searches", "type": "main", "index": 0 }]
+      ]
+    },
+    "Advance Tier2 Index": {
+      "main": [[{ "node": "Get Pending Jobs", "type": "main", "index": 0 }]]
+    },
+    "Get Pending Jobs": {
+      "main": [[{ "node": "Loop Jobs", "type": "main", "index": 0 }]]
+    },
+    "Loop Jobs": {
+      "main": [[{ "node": "Build Score Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Score Prompt": {
+      "main": [[{ "node": "Score – Gemini", "type": "main", "index": 0 }]]
+    },
+    "Score – Gemini": {
+      "main": [
+        [{ "node": "Extract Score (Gemini)", "type": "main", "index": 0 }],
+        [{ "node": "Score – Groq", "type": "main", "index": 0 }]
+      ]
+    },
+    "Score – Groq": {
+      "main": [
+        [{ "node": "Extract Score (Groq)", "type": "main", "index": 0 }],
+        [{ "node": "Score – Cerebras", "type": "main", "index": 0 }]
+      ]
+    },
+    "Score – Cerebras": {
+      "main": [[{ "node": "Extract Score (Cerebras)", "type": "main", "index": 0 }]]
+    },
+    "Extract Score (Gemini)": {
+      "main": [[{ "node": "Score >= Threshold?", "type": "main", "index": 0 }]]
+    },
+    "Extract Score (Groq)": {
+      "main": [[{ "node": "Score >= Threshold?", "type": "main", "index": 0 }]]
+    },
+    "Extract Score (Cerebras)": {
+      "main": [[{ "node": "Score >= Threshold?", "type": "main", "index": 0 }]]
+    },
+    "Score >= Threshold?": {
+      "main": [
+        [{ "node": "Set Status: notified", "type": "main", "index": 0 }],
+        [{ "node": "Set Status: skipped", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set Status: notified": {
+      "main": [[{ "node": "Send Telegram", "type": "main", "index": 0 }]]
+    },
+    "Send Telegram": {
+      "main": [[{ "node": "Log Telegram Msg", "type": "main", "index": 0 }]]
+    },
+    "Log Telegram Msg": {
+      "main": [[{ "node": "Next Job", "type": "main", "index": 0 }]]
+    },
+    "Set Status: skipped": {
+      "main": [[{ "node": "Next Job", "type": "main", "index": 0 }]]
+    },
+    "Next Job": {
+      "main": [[{ "node": "Loop Jobs", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "active": false,
+  "meta": { "templateCredsSetupCompleted": true }
+}
