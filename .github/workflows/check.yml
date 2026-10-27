@@ -20,7 +20,10 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
-      - run: npx playwright install --with-deps chromium
+      - name: Use runner-provided Chrome
+        run: |
+          google-chrome --version
+          echo "PLAYWRIGHT_CHROME_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
       - run: npm run test:browser
   container:
     runs-on: ubuntu-24.04

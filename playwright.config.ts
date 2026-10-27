@@ -7,8 +7,9 @@ export default defineConfig({
     baseURL: "http://localhost:3100",
     headless: true,
     viewport: { width: 1440, height: 1000 },
-    launchOptions:
-      process.platform === "darwin"
+    launchOptions: process.env.PLAYWRIGHT_CHROME_EXECUTABLE
+      ? { executablePath: process.env.PLAYWRIGHT_CHROME_EXECUTABLE }
+      : process.platform === "darwin"
         ? {
             executablePath:
               "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",

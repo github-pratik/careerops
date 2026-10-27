@@ -28,6 +28,8 @@ Unit/integration tests use an isolated temporary PostgreSQL cluster on port 1543
 
 On macOS, the browser suite uses the installed Google Chrome executable. On other systems install Playwright Chromium with `npx playwright install --with-deps chromium` before the browser suite. Browser fixtures contain synthetic candidate/job information. Browser evidence is written to ignored `.data/screenshots/`; do not commit screenshots of personal documents.
 
+CI uses the Chrome executable already installed on the Ubuntu runner and passes its location through `PLAYWRIGHT_CHROME_EXECUTABLE`. This setting also allows a developer to select an existing Chrome installation explicitly.
+
 ## Switching laptops
 
 1. On the current computer: finish checks, update implementation notes, commit the coherent change and push its branch.

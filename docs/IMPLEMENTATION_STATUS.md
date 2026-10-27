@@ -28,7 +28,8 @@ Implemented:
 - `npm run test:browser`: passed the complete owner workflow in headless Chrome: sign in, upload/extract a synthetic PDF, confirm a fact, save a job, create/review/approve a packet, and check mobile overflow. Desktop and mobile screenshots were inspected. The test explicitly checks that approval is not represented as submission.
 - GitHub Actions run `40565883692` passed the build, all 15 tests and the browser flow on a Linux runner with Node 24. Draft PR: https://github.com/github-pratik/careerops/pull/1.
 - Initial dependency audit: zero reported vulnerabilities at install time; this is not a full security audit.
-- A Docker/Compose health/authentication smoke job is now configured in CI; inspect its result before claiming the container is verified. Docker is not installed on this computer. Codespaces and production ARM64 images still require validation.
+- GitHub Actions run `40566173952` passed both application verification and the Docker/Compose smoke job: built the production image, started the app with PostgreSQL, checked health and required authentication for records, then removed isolated CI containers/volumes. Docker is not installed on this computer. Codespaces and production ARM64 images still require validation.
+- CI is pinned to Ubuntu 24.04 and uses the runner's installed Chrome to avoid repeated browser/dependency downloads. The check prints the actual browser version; normal developer environments may use the documented Playwright installation path.
 
 ## Important limitations
 
