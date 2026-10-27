@@ -1,5 +1,13 @@
 # CareerOps — SmartJob Hunter
 
+## Application workspace under development
+
+The repository now includes a TypeScript/React application with a private document library, extracted resume text, confirmed profile facts, public company-board imports, review packets and version-bound approvals. Optional Groq integration proposes source-quoted facts for review. **Automatic portal submission, employer email and production cloud deployment are not implemented yet.** Approval is never displayed as a completed application.
+
+Start with [development instructions](docs/DEVELOPMENT.md), [implementation status](docs/IMPLEMENTATION_STATUS.md) and the [cloud engineering proposal](docs/CLOUD_APPLICATION_PLAN.md). The repository also contains a Codespaces/devcontainer configuration for optional cloud development. Credentials, resumes and local databases are excluded from Git.
+
+The original n8n prototype is preserved below. Its setup and capabilities are separate from the new application workspace.
+
 An automated job hunting pipeline that scans multiple job boards, scores listings with AI, and delivers a daily digest via Telegram and email.
 
 ## What it does

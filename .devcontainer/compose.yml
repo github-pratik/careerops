@@ -1,0 +1,24 @@
+services:
+  dev:
+    build: .
+    volumes:
+      - ..:/workspaces/careerops:cached
+    command: sleep infinity
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: careerops
+      POSTGRES_DB: careerops
+      POSTGRES_PASSWORD: development-only
+    volumes:
+      - development_db:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U careerops -d careerops"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+volumes:
+  development_db:

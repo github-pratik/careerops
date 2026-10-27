@@ -1,0 +1,11 @@
+.git
+.env*
+.data
+keys.local.md
+node_modules
+dist
+test-results
+playwright-report
+.claude
+workflows
+calibration

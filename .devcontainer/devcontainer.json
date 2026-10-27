@@ -1,0 +1,13 @@
+{
+  "name": "CareerOps development",
+  "dockerComposeFile": "compose.yml",
+  "service": "dev",
+  "workspaceFolder": "/workspaces/careerops",
+  "remoteUser": "node",
+  "forwardPorts": [3100],
+  "portsAttributes": {
+    "3100": { "label": "CareerOps", "onAutoForward": "notify" }
+  },
+  "postCreateCommand": "npm ci && npm run build && node --import tsx scripts/setup-devcontainer.ts",
+  "customizations": { "vscode": { "extensions": ["dbaeumer.vscode-eslint"] } }
+}
