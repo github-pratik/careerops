@@ -67,7 +67,8 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
       "Content-Security-Policy",
       "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
     );
-    if (req.url.startsWith("/api/")) {
+    const route = req.routeOptions.url ?? req.url.split("?")[0];
+    if (route.startsWith("/api/")) {
       reply.header("Cache-Control", "no-store");
       if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
         if (
@@ -77,7 +78,7 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
           throw fail(403, "Request origin could not be verified.");
       }
       const publicPath = ["/api/login", "/api/session", "/api/health"].includes(
-        req.url.split("?")[0],
+        route,
       );
       if (!publicPath && !validSession(req)) throw fail(401, "Please sign in.");
     }

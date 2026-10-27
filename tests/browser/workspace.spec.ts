@@ -1,11 +1,14 @@
 import { test, expect } from "@playwright/test";
 import { readFile, mkdir } from "node:fs/promises";
 import pg from "pg";
+import { randomUUID } from "node:crypto";
 test("owner can upload a PDF, confirm a fact, prepare and approve a packet", async ({
   page,
   browser,
 }) => {
   const errors: string[] = [];
+  const fixtureId = randomUUID();
+  const filename = `browser-test-${fixtureId}.pdf`;
   page.on("pageerror", (e) => errors.push(e.message));
   const password = await readFile(".data/preview-password", "utf8");
   await page.goto("/");
@@ -22,7 +25,7 @@ test("owner can upload a PDF, confirm a fact, prepare and approve a packet", asy
   });
   const pdfPage = await browser.newPage();
   await pdfPage.setContent(
-    "<h1>Browser Test Candidate</h1><p>Built a document search project using Python.</p>",
+    `<h1>Browser Test Candidate ${fixtureId}</h1><p>Built a document search project using Python.</p>`,
   );
   const pdf = await pdfPage.pdf();
   await pdfPage.close();
@@ -30,17 +33,17 @@ test("owner can upload a PDF, confirm a fact, prepare and approve a packet", asy
   await page
     .getByLabel("Upload documents")
     .setInputFiles({
-      name: "browser-test-resume.pdf",
+      name: filename,
       mimeType: "application/pdf",
       buffer: pdf,
     });
   await expect(
-    page.getByText("browser-test-resume.pdf", { exact: true }),
+    page.getByText(filename, { exact: true }),
   ).toBeVisible();
   await expect(
     page
       .locator(".document")
-      .filter({ hasText: "browser-test-resume.pdf" })
+      .filter({ hasText: filename })
       .getByText("Ready", { exact: true }),
   ).toBeVisible({ timeout: 30000 });
   await page.screenshot({
