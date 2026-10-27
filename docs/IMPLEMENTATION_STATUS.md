@@ -26,8 +26,9 @@ Implemented:
 - `npm run build`: passed TypeScript checking and Vite production build on macOS ARM64 / Node 26.
 - `npm test`: 15 tests passed with a real temporary PostgreSQL server. Covers auth/origin checks, duplicate originals, text extraction, rejected fake evidence, explicit fact confirmation, stale hashes, idempotent approvals, invalidation, queue startup, canonical hashing, model-evidence validation and rebuilt-asset serving.
 - `npm run test:browser`: passed the complete owner workflow in headless Chrome: sign in, upload/extract a synthetic PDF, confirm a fact, save a job, create/review/approve a packet, and check mobile overflow. Desktop and mobile screenshots were inspected. The test explicitly checks that approval is not represented as submission.
+- GitHub Actions run `40565883692` passed the build, all 15 tests and the browser flow on a Linux runner with Node 24. Draft PR: https://github.com/github-pratik/careerops/pull/1.
 - Initial dependency audit: zero reported vulnerabilities at install time; this is not a full security audit.
-- Docker/Compose/Codespaces and production ARM64 images are not tested here because Docker is not installed on this computer.
+- A Docker/Compose health/authentication smoke job is now configured in CI; inspect its result before claiming the container is verified. Docker is not installed on this computer. Codespaces and production ARM64 images still require validation.
 
 ## Important limitations
 

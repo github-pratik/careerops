@@ -4,8 +4,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -14,3 +14,32 @@ jobs:
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
+  container:
+    runs-on: ubuntu-latest
+    needs: verify
+    timeout-minutes: 10
+    env:
+      DOMAIN: careerops.invalid
+      DB_PASSWORD: ci-only-database-password
+      ADMIN_PASSWORD: ci-only-owner-password-for-smoke-test
+      SESSION_SECRET: ci-only-session-secret-for-isolated-smoke-testing
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Validate deployment configuration
+        run: docker compose --project-name careerops-ci -f infra/compose.yml config --quiet
+      - name: Build and start application with PostgreSQL
+        run: docker compose --project-name careerops-ci -f infra/compose.yml up --build --wait --wait-timeout 120 app db
+      - name: Verify production health and authentication boundary
+        run: |
+          docker compose --project-name careerops-ci -f infra/compose.yml exec -T app node --input-type=module -e '
+            const health = await fetch("http://127.0.0.1:3100/api/health");
+            if (!health.ok) throw new Error("Container health failed");
+            const records = await fetch("http://127.0.0.1:3100/api/state");
+            if (records.status !== 401) throw new Error("Records were not protected");
+          '
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: docker compose --project-name careerops-ci -f infra/compose.yml logs --tail 80
+      - name: Remove isolated CI containers and test volumes
+        if: always()
+        run: docker compose --project-name careerops-ci -f infra/compose.yml down --volumes
