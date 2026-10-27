@@ -37,6 +37,7 @@ export const sourceSchema = z.object({
   company: z.string().trim().min(1).max(200),
 });
 export const packetSchema = z.object({
+  assessmentId: z.string().uuid().optional(),
   factIds: z.array(z.string().uuid()).min(1).max(100),
   note: z.string().max(3000).default(""),
   answers: z
@@ -52,6 +53,13 @@ export const packetSchema = z.object({
 export function digest(value: string | Buffer) {
   return createHash("sha256").update(value).digest("hex");
 }
+export const preferencesSchema = z.object({
+  monthlyBudgetUsd: z.number().min(0).max(10),
+  usualNetMonthlyUsd: z.number().min(0).max(1000000).nullable(),
+  indiaRemoteFlexible: z.boolean(),
+  markets: z.array(z.string().trim().min(1).max(100)).max(20),
+  targetRoles: z.array(z.string().trim().min(1).max(100)).max(15).default([]),
+});
 export function canonical(value: unknown): string {
   if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
   if (value && typeof value === "object")

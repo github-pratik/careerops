@@ -30,16 +30,12 @@ test("owner can upload a PDF, confirm a fact, prepare and approve a packet", asy
   const pdf = await pdfPage.pdf();
   await pdfPage.close();
   await page.getByRole("button", { name: "Documents", exact: true }).click();
-  await page
-    .getByLabel("Upload documents")
-    .setInputFiles({
-      name: filename,
-      mimeType: "application/pdf",
-      buffer: pdf,
-    });
-  await expect(
-    page.getByText(filename, { exact: true }),
-  ).toBeVisible();
+  await page.getByLabel("Upload documents").setInputFiles({
+    name: filename,
+    mimeType: "application/pdf",
+    buffer: pdf,
+  });
+  await expect(page.getByText(filename, { exact: true })).toBeVisible();
   await expect(
     page
       .locator(".document")
@@ -85,6 +81,7 @@ test("owner can upload a PDF, confirm a fact, prepare and approve a packet", asy
     .locator("article.job")
     .filter({ hasText: "Browser Test Engineer" });
   await expect(job).toBeVisible();
+  await expect(job.getByRole("button",{name:"Assess fit"})).toBeDisabled();
   await job.getByRole("button", { name: "Prepare packet" }).click();
   await page.getByRole("button", { name: "Create review packet" }).click();
   await expect(

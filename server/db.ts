@@ -73,5 +73,12 @@ export async function migrate(db: Db) {
       error text, created_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE UNIQUE INDEX IF NOT EXISTS co_manual_job_url ON co_jobs(url) WHERE source_id IS NULL;
+    ALTER TABLE co_model_calls ADD COLUMN IF NOT EXISTS task_key text;
+    CREATE TABLE IF NOT EXISTS co_assessments (
+      id uuid PRIMARY KEY, job_id uuid NOT NULL REFERENCES co_jobs(id),
+      profile_version integer NOT NULL, job_hash text NOT NULL, output jsonb NOT NULL,
+      model text NOT NULL, policy_version integer NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS co_assessment_job_idx ON co_assessments(job_id,created_at DESC);
   `);
 }

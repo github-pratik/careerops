@@ -1,4 +1,12 @@
-import { beforeAll, afterAll, describe, it, expect } from "vitest";
+import {
+  beforeAll,
+  afterAll,
+  afterEach,
+  describe,
+  it,
+  expect,
+  vi,
+} from "vitest";
 import EmbeddedPostgres from "embedded-postgres";
 import { mkdtemp, readFile, writeFile, unlink } from "node:fs/promises";
 import { createDb, migrate, type Db } from "../server/db.js";
@@ -239,6 +247,181 @@ describe("approval integrity", () => {
     } = await db.query("SELECT * FROM co_packets WHERE id=$1", [packet.id]);
     expect(p.state).toBe("stale");
     expect(p.payload.facts[0].value).toContain("Python");
+  });
+});
+describe("job matching and preparation", () => {
+  let factId: string, jobId: string, assessmentId: string;
+  const description = "Build services using Python. Kubernetes is preferred.";
+  const makeOutput = () => ({
+    score: 79,
+    summary: "Relevant Python project; deployment experience is unknown.",
+    matches: [
+      {
+        requirementQuote: "Python",
+        factId,
+        reason: "Confirmed Python project.",
+      },
+    ],
+    gaps: [
+      {
+        requirementQuote: "Kubernetes",
+        reason: "Not established by the profile.",
+      },
+    ],
+    recommendedFactIds: [factId],
+    warnings: ["Confirm remote geography and work eligibility."],
+  });
+  function enableModel(output: unknown = makeOutput()) {
+    vi.stubEnv("GROQ_API_KEY", "synthetic-test-key");
+    vi.stubEnv("ALLOW_PERSONAL_DATA_TO_GROQ", "true");
+    return vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(output) } }],
+            usage: { prompt_tokens: 1000, completion_tokens: 300 },
+          }),
+          { status: 200 },
+        ),
+      );
+  }
+  beforeAll(async () => {
+    factId = (
+      await request("POST", "/facts", {
+        category: "project",
+        label: "Matching fixture project",
+        value: "Built services using Python.",
+        confirmed: true,
+      })
+    ).json().id;
+    await request("POST", "/facts", {
+      category: "identity",
+      label: "Private fixture identity",
+      value: "Fixture contact excluded from matching",
+      confirmed: true,
+    });
+    await request("POST", "/facts", {
+      category: "authorization",
+      label: "Private fixture authorization",
+      value: "Fixture authorization excluded from matching",
+      confirmed: true,
+    });
+    jobId = (
+      await request("POST", "/jobs", {
+        company: "Matching Fixture",
+        title: "Software Engineer",
+        location: "Remote, countries unverified",
+        url: "https://example.com/matching-fixture",
+        description,
+      })
+    ).json().id;
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+  it("requires a connected, consented provider", async () => {
+    const r = await request("POST", `/jobs/${jobId}/assess`, {});
+    expect(r.statusCode).toBe(409);
+  });
+  it("sends the full posting, minimizes identity data and caches versioned assessments", async () => {
+    const provider = enableModel();
+    const first = await request("POST", `/jobs/${jobId}/assess`, {});
+    expect(first.statusCode).toBe(200);
+    expect(first.json().output.score).toBe(79);
+    assessmentId = first.json().id;
+    const body = JSON.parse(
+      (provider.mock.calls[0][1] as RequestInit).body as string,
+    );
+    expect(body.messages[1].content).toContain(description);
+    expect(body.messages[1].content).not.toContain("Fixture contact excluded");
+    expect(body.messages[1].content).not.toContain(
+      "Fixture authorization excluded",
+    );
+    const second = await request("POST", `/jobs/${jobId}/assess`, {});
+    expect(second.json().cached).toBe(true);
+    expect(provider).toHaveBeenCalledTimes(1);
+    const packet = await request("POST", `/jobs/${jobId}/packets`, {
+      factIds: [factId],
+      assessmentId,
+    });
+    expect(packet.statusCode).toBe(200);
+    const {
+      rows: [saved],
+    } = await db.query("SELECT payload FROM co_packets WHERE id=$1", [
+      packet.json().id,
+    ]);
+    expect(saved.payload.facts[0].value).toBe("Built services using Python.");
+    expect(saved.payload.assessment.id).toBe(assessmentId);
+    await db.query("UPDATE co_jobs SET location=$2 WHERE id=$1", [
+      jobId,
+      "Onsite, fixture country",
+    ]);
+    expect(
+      (
+        await request("POST", `/packets/${packet.json().id}/approve`, {
+          hash: packet.json().hash,
+        })
+      ).statusCode,
+    ).toBe(409);
+    expect(
+      (
+        await request("POST", `/jobs/${jobId}/packets`, {
+          factIds: [factId],
+          assessmentId,
+        })
+      ).statusCode,
+    ).toBe(409);
+  });
+  it("shows provider quota failure without creating a rejection score", async () => {
+    const provider = enableModel();
+    provider.mockResolvedValue(new Response("{}", { status: 429 }));
+    const before = await db.query(
+      "SELECT count(*)::int AS n FROM co_assessments WHERE job_id=$1",
+      [jobId],
+    );
+    const response = await request("POST", `/jobs/${jobId}/assess`, {});
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error).toContain("quota");
+    const after = await db.query(
+      "SELECT count(*)::int AS n FROM co_assessments WHERE job_id=$1",
+      [jobId],
+    );
+    expect(after.rows[0].n).toBe(before.rows[0].n);
+    const {
+      rows: [job],
+    } = await db.query("SELECT state FROM co_jobs WHERE id=$1", [jobId]);
+    expect(job.state).toBe("new");
+  });
+  it("rejects fabricated fact references and never saves the assessment", async () => {
+    const provider = enableModel({
+      ...makeOutput(),
+      recommendedFactIds: ["33333333-3333-4333-8333-333333333333"],
+    });
+    const response = await request("POST", `/jobs/${jobId}/assess`, {});
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error).toContain("unknown");
+    expect(provider).toHaveBeenCalledTimes(1);
+  });
+  it("invalidates stale recommendations after preference changes and honors a zero budget", async () => {
+    const provider = enableModel();
+    const saved = await request("POST", "/preferences", {
+      monthlyBudgetUsd: 0,
+      usualNetMonthlyUsd: null,
+      indiaRemoteFlexible: true,
+      markets: ["Fixture market"],
+      targetRoles: ["Software Engineer"],
+    });
+    expect(saved.statusCode).toBe(200);
+    const state = (await request("GET", "/state")).json();
+    expect(
+      state.assessments.find((a: any) => a.id === assessmentId).stale,
+    ).toBe(true);
+    const response = await request("POST", `/jobs/${jobId}/assess`, {});
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error).toContain("allowance");
+    expect(provider).not.toHaveBeenCalled();
   });
 });
 describe("queue and utilities", () => {

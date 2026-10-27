@@ -4,6 +4,8 @@
 
 The repository now includes a TypeScript/React application with a private document library, extracted resume text, confirmed profile facts, public company-board imports, review packets and version-bound approvals. Optional Groq integration proposes source-quoted facts for review. **Automatic portal submission, employer email and production cloud deployment are not implemented yet.** Approval is never displayed as a completed application.
 
+The optional matching feature compares full job descriptions with confirmed experience, explains matches/gaps using source references and recommends facts for review packets. Private preferences can change without source edits. AI needs a configured, privacy-approved provider; live model quality evaluation is still pending.
+
 Start with [development instructions](docs/DEVELOPMENT.md), [implementation status](docs/IMPLEMENTATION_STATUS.md) and the [cloud engineering proposal](docs/CLOUD_APPLICATION_PLAN.md). The repository also contains a Codespaces/devcontainer configuration for optional cloud development. Credentials, resumes and local databases are excluded from Git.
 
 The original n8n prototype is preserved below. Its setup and capabilities are separate from the new application workspace.

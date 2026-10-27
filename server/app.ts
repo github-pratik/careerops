@@ -18,10 +18,12 @@ import {
   jobSchema,
   packetHash,
   packetSchema,
+  preferencesSchema,
   resumeHtml,
   sourceSchema,
 } from "./domain.js";
 import { analyzeDocument, modelReady } from "./models.js";
+import { assessJob, jobSnapshot } from "./matching.js";
 
 const fail = (statusCode: number, message: string) =>
   Object.assign(new Error(message), { statusCode });
@@ -91,14 +93,12 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
     const code = error.statusCode || (error.code === "23505" ? 409 : 500);
     if (code >= 500)
       app.log.error({ message: error.message }, "Request failed");
-    reply
-      .code(code)
-      .send({
-        error:
-          code >= 500
-            ? "Operation failed. Please retry; your existing records are retained."
-            : error.message,
-      });
+    reply.code(code).send({
+      error:
+        code >= 500
+          ? "Operation failed. Please retry; your existing records are retained."
+          : error.message,
+    });
   });
   app.get("/api/health", async () => {
     await db.query("SELECT 1");
@@ -142,6 +142,7 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
       audit,
       proposals,
       usage,
+      assessments,
     ] = await Promise.all([
       db.query(
         "SELECT d.*, (SELECT count(*)::int FROM co_imports i WHERE i.document_id=d.id) AS imports FROM co_documents d ORDER BY created_at DESC",
@@ -160,6 +161,9 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
       db.query(
         "SELECT coalesce(sum(coalesce(cost_usd,reserved_usd)),0)::float AS estimated_usd FROM co_model_calls WHERE created_at>=date_trunc('month',now())",
       ),
+      db.query(
+        "SELECT DISTINCT ON(job_id) * FROM co_assessments ORDER BY job_id,created_at DESC",
+      ),
     ]);
     return {
       documents: documents.rows,
@@ -171,6 +175,16 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
       audit: audit.rows,
       proposals: proposals.rows,
       modelUsage: usage.rows[0],
+      assessments: assessments.rows.map((a) => {
+        const job = jobs.rows.find((j) => j.id === a.job_id);
+        return {
+          ...a,
+          stale:
+            !job ||
+            a.profile_version !== settings.rows[0].profile_version ||
+            a.job_hash !== packetHash(jobSnapshot(job)),
+        };
+      }),
       capabilities: {
         documentLibrary: true,
         sourceScanning: true,
@@ -402,6 +416,31 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
     );
     return { id };
   });
+  app.post("/api/jobs/:id/assess", async (req) => {
+    const id = idSchema.parse((req.params as any).id);
+    if (!modelReady())
+      throw fail(
+        409,
+        "Connect the model provider and approve personal-data processing to assess jobs.",
+      );
+    try {
+      return await assessJob(db, id);
+    } catch (e) {
+      throw fail(422, (e as Error).message);
+    }
+  });
+  app.post("/api/preferences", async (req) => {
+    const preferences = preferencesSchema.parse(req.body);
+    await transaction(db, async (c) => {
+      await c.query("SELECT * FROM co_settings FOR UPDATE");
+      await c.query("UPDATE co_settings SET preferences=$1", [preferences]);
+      await invalidate(c);
+      await c.query(
+        "INSERT INTO co_audit(action) VALUES('preferences_updated')",
+      );
+    });
+    return { ok: true };
+  });
   app.post("/api/sources", async (req) => {
     const s = sourceSchema.parse(req.body),
       id = randomUUID();
@@ -432,11 +471,30 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
       } = await c.query("SELECT * FROM co_jobs WHERE id=$1", [jobId]);
       if (!job) throw fail(404, "Job not found.");
       const { rows: facts } = await c.query(
-        "SELECT id,category,label,value,version FROM co_facts WHERE active AND id=ANY($1::uuid[]) ORDER BY category,label",
+        "SELECT id,category,label,value,version FROM co_facts WHERE active AND id=ANY($1::uuid[]) ORDER BY array_position($1::uuid[],id)",
         [input.factIds],
       );
       if (facts.length !== new Set(input.factIds).size)
         throw fail(409, "One or more selected facts are no longer current.");
+      let assessment = null;
+      if (input.assessmentId) {
+        const {
+          rows: [a],
+        } = await c.query(
+          "SELECT * FROM co_assessments WHERE id=$1 AND job_id=$2",
+          [input.assessmentId, jobId],
+        );
+        if (
+          !a ||
+          a.profile_version !== settings.profile_version ||
+          a.job_hash !== packetHash(jobSnapshot(job))
+        )
+          throw fail(
+            409,
+            "This assessment is stale. Assess the current job and profile again.",
+          );
+        assessment = { id: a.id, model: a.model, ...a.output };
+      }
       const payload = {
         job: {
           id: job.id,
@@ -450,6 +508,7 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
         note: input.note,
         answers: input.answers,
         preferences: settings.preferences,
+        assessment,
       };
       const hash = packetHash(payload);
       await c.query(
@@ -484,8 +543,7 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
         packet.profile_version !== settings.profile_version ||
         packet.hash !== hash ||
         packetHash(packet.payload) !== hash ||
-        job.description !== packet.payload.job.description ||
-        job.url !== packet.payload.job.url
+        packetHash(jobSnapshot(job)) !== packetHash(packet.payload.job)
       )
         throw fail(
           409,

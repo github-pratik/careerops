@@ -159,6 +159,9 @@ function App() {
     jobs = state.jobs,
     packets = state.packets;
   const pending = packets.filter((p: any) => p.state === "review").length;
+  const selectedAssessment = state.assessments?.find(
+    (a: any) => a.job_id === selectedJob?.id,
+  );
   const nav = [
     "Overview",
     "Documents",
@@ -252,6 +255,96 @@ function App() {
             {notice}
             <button onClick={() => setNotice("")}>Dismiss</button>
           </div>
+        )}
+        {page === "Profile" && (
+          <details className="panel">
+            <summary>
+              Search and compensation preferences <span>+</span>
+            </summary>
+            <p className="caption">
+              These stay in your private database. Updating them makes old
+              assessments and unsent approvals stale.
+            </p>
+            <form
+              key={state.settings.profile_version}
+              onSubmit={(e) => {
+                e.preventDefault();
+                const f = fields(e);
+                void run(
+                  () =>
+                    api("/preferences", "POST", {
+                      monthlyBudgetUsd: Number(f.budget),
+                      usualNetMonthlyUsd: f.net === "" ? null : Number(f.net),
+                      indiaRemoteFlexible: f.india === "on",
+                      markets: String(f.markets)
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                      targetRoles: String(f.roles)
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    }),
+                  "Preferences updated. Existing drafts need a fresh review.",
+                );
+              }}
+            >
+              <label>
+                Target roles (comma-separated)
+                <input
+                  name="roles"
+                  defaultValue={
+                    state.settings.preferences.targetRoles?.join(", ") || ""
+                  }
+                />
+              </label>
+              <label>
+                Target markets (comma-separated)
+                <input
+                  name="markets"
+                  defaultValue={
+                    state.settings.preferences.markets?.join(", ") || ""
+                  }
+                />
+              </label>
+              <label>
+                Usual monthly take-home target (USD)
+                <input
+                  type="number"
+                  name="net"
+                  min="0"
+                  max="1000000"
+                  defaultValue={
+                    state.settings.preferences.usualNetMonthlyUsd ?? ""
+                  }
+                />
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  name="india"
+                  defaultChecked={
+                    state.settings.preferences.indiaRemoteFlexible
+                  }
+                />
+                Consider lower pay for full-time remote employment explicitly
+                permitting work from India.
+              </label>
+              <label>
+                Monthly service budget (USD, maximum 10)
+                <input
+                  type="number"
+                  name="budget"
+                  min="0"
+                  max="10"
+                  step="0.01"
+                  required
+                  defaultValue={state.settings.preferences.monthlyBudgetUsd}
+                />
+              </label>
+              <button disabled={busy}>Save preferences</button>
+            </form>
+          </details>
         )}
         {page === "Documents" && (
           <section className="panel">
@@ -953,12 +1046,57 @@ function App() {
                       <small>{j.company}</small>
                       <h3>{j.title}</h3>
                       <p>{j.location}</p>
+                      {state.assessments?.find(
+                        (a: any) => a.job_id === j.id,
+                      ) && (
+                        <small>
+                          {state.assessments.find((a: any) => a.job_id === j.id)
+                            .stale
+                            ? "Assessment needs updating"
+                            : `AI fit estimate: ${state.assessments.find((a: any) => a.job_id === j.id).output.score}/100`}
+                        </small>
+                      )}
                     </div>
+                    <button
+                      className="secondary"
+                      disabled={
+                        busy || !state.capabilities.aiConnected || !facts.length
+                      }
+                      title={
+                        state.capabilities.aiConnected
+                          ? "Compare with confirmed profile facts"
+                          : "Connect the model provider before matching"
+                      }
+                      onClick={() =>
+                        void run(
+                          () => api("/jobs/" + j.id + "/assess", "POST", {}),
+                          "Job assessment saved for review",
+                        )
+                      }
+                    >
+                      Assess fit
+                    </button>
                     <button
                       className="secondary"
                       onClick={() => {
                         setSelectedJob(j);
-                        setFactIds(facts.map((f: any) => f.id));
+                        const assessment = state.assessments?.find(
+                          (a: any) => a.job_id === j.id && !a.stale,
+                        );
+                        setFactIds(
+                          assessment
+                            ? [
+                                ...new Set([
+                                  ...facts
+                                    .filter(
+                                      (f: any) => f.category === "identity",
+                                    )
+                                    .map((f: any) => f.id),
+                                  ...assessment.output.recommendedFactIds,
+                                ]),
+                              ]
+                            : facts.map((f: any) => f.id),
+                        );
                       }}
                     >
                       Prepare packet →
@@ -990,6 +1128,50 @@ function App() {
                   <p className="preserve">{selectedJob.description}</p>
                 </details>
                 <h3>Select confirmed facts for this application</h3>
+                {selectedAssessment && (
+                  <div className="info">
+                    {selectedAssessment.stale ? (
+                      <p>
+                        This assessment is stale because the job or profile
+                        changed.
+                      </p>
+                    ) : (
+                      <>
+                        <strong>
+                          AI fit estimate: {selectedAssessment.output.score}/100
+                        </strong>
+                        <p>{selectedAssessment.output.summary}</p>
+                        <p className="caption">
+                          This is a model estimate, not a hiring probability.
+                          Work eligibility still requires review.
+                        </p>
+                        {selectedAssessment.output.matches.map(
+                          (m: any, i: number) => (
+                            <p key={"match-" + i}>
+                              <strong>Relevant:</strong> “{m.requirementQuote}”
+                              →{" "}
+                              {facts.find((f: any) => f.id === m.factId)?.label}
+                              . {m.reason}
+                            </p>
+                          ),
+                        )}
+                        {selectedAssessment.output.gaps.map(
+                          (g: any, i: number) => (
+                            <p key={"gap-" + i}>
+                              <strong>Gap / unknown:</strong> “
+                              {g.requirementQuote}” — {g.reason}
+                            </p>
+                          ),
+                        )}
+                        {selectedAssessment.output.warnings.map(
+                          (w: string, i: number) => (
+                            <p key={"warning-" + i}>{w}</p>
+                          ),
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
                 {facts.map((f: any) => (
                   <label className="checkbox" key={f.id}>
                     <input
@@ -1018,7 +1200,15 @@ function App() {
                       await api(
                         "/jobs/" + selectedJob.id + "/packets",
                         "POST",
-                        { factIds, note: "", answers: [] },
+                        {
+                          factIds,
+                          note: "",
+                          answers: [],
+                          assessmentId:
+                            selectedAssessment && !selectedAssessment.stale
+                              ? selectedAssessment.id
+                              : undefined,
+                        },
                       );
                       setSelectedJob(null);
                       setPage("Review");
@@ -1088,6 +1278,16 @@ function App() {
                   Authorization facts are shown below for review but are
                   excluded from the resume layout.
                 </p>
+                {selectedPacket.payload.assessment && (
+                  <div className="info">
+                    <strong>Preparation rationale</strong>
+                    <p>{selectedPacket.payload.assessment.summary}</p>
+                    <small>
+                      The resume uses the selected confirmed facts verbatim. No
+                      new experience is generated.
+                    </small>
+                  </div>
+                )}
                 {selectedPacket.payload.facts.map((f: any) => (
                   <div className="review-fact" key={f.id}>
                     <strong>{f.label}</strong>

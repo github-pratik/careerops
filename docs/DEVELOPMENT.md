@@ -46,4 +46,12 @@ A GitHub Codespaces configuration is included for a shared browser-accessible de
 
 `infra/compose.yml` is the new application deployment scaffold. Root `docker-compose.yml` is the original n8n setup and is retained separately. New application runtime values are owner password, session secret, database password and HTTPS hostname. The agent can provision/configure these after cloud account access is available. No cloud resources or paid services have been created.
 
-Production validation still needs a container build, real host, backups/restore, cloud secrets, pinned image digests and the remaining submission/mail features. Local verification does not establish production readiness.
+The Linux container build and health/authentication smoke test are verified in GitHub Actions. Production validation still needs a real host, target architecture, backups/restore, cloud secrets, pinned image digests and the remaining submission/mail features. CI verification does not establish a live production deployment.
+
+## Matching and model configuration
+
+Model extraction and job matching require both `GROQ_API_KEY` and explicit `ALLOW_PERSONAL_DATA_TO_GROQ=true` in private runtime configuration. Confirm provider privacy settings before enabling. No credentials are stored in source control. Matching excludes identity and authorization fact categories from provider payloads and always leaves work eligibility for review.
+
+Use Profile → Search and compensation preferences to update markets, roles, take-home preferences and the service budget. Matching reads the full saved job description and confirmed profile facts; evidence references and quotes are validated before an assessment is saved. Prepare packet selects existing facts in recommended order; it does not generate employment history or submit an application.
+
+`tests/matching.test.ts` and matching cases in `tests/app.test.ts` use synthetic data and mocked provider responses. A successful test run does not establish live model availability, output quality or employer acceptance.
