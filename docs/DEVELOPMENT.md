@@ -16,6 +16,26 @@ The preview script starts an isolated development PostgreSQL server and the app 
 
 For an existing PostgreSQL service, run `npm run setup`, set the private `.env` values for that instance and use `npm start`. For Vite live frontend editing, run `npm run dev:web` and use its URL; match `APP_ORIGIN` to that browser origin when making authenticated requests. The normal built preview needs no separate frontend process.
 
+## Private selected-folder intake
+
+After the user identifies a folder, the agent can import its supported resume files without editing the originals:
+
+```sh
+node --import tsx scripts/import-resumes.ts /absolute/path/to/selected-folder
+```
+
+This creates private copies in `.data/library-files` and an isolated PostgreSQL library in `.data/library-db` (port 15441). It records file provenance, checks copied-content hashes and extracts text locally. It skips hidden files, subdirectories, symbolic links, TeX sources, and filenames indicating supporting transcripts/identity records. No remote model or cloud upload occurs. Reports are private under `.data/resume-intake/`.
+
+To inspect the private intake workspace temporarily:
+
+```sh
+node --import tsx scripts/preview.ts --workspace=library
+```
+
+The owner password is generated in `.data/library-password`. Stop this inspection server before rerunning the offline importer. The default preview workspace and browser tests use separate synthetic data on database port 15440. Neither local workspace is production hosting; private records must be migrated securely once a cloud account is connected. Never commit reports, source folders, original files, database contents or personal profile suggestions.
+
+Imported resume content remains evidence for review. Newer filenames and timestamps do not establish factual accuracy; conflicting dates/titles require user confirmation. Supporting academic/immigration records require a separate, specific workflow before use.
+
 ## Tests
 
 ```sh

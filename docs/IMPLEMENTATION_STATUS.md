@@ -4,7 +4,7 @@ Updated: 27 October 2026. Active development branch: `codex/cloud-workspace-foun
 
 ## Actual release state
 
-This is a working **review foundation**, not the completed autonomous application service. Local development verification has been performed; no production cloud host or live employer integration has been provisioned. No real application or employer email has been sent. No user resume has been imported; test documents are synthetic.
+This is a working **review foundation**, not the completed autonomous application service. Local development verification has been performed; no production cloud host or live employer integration has been provisioned. No real application or employer email has been sent. Any user resume intake is private in the isolated library workspace; automated tests use separate synthetic data. This public handoff intentionally excludes personal document inventories and profile details.
 
 Implemented:
 
@@ -12,6 +12,7 @@ Implemented:
 - Fastify API, HTTP-only signed session cookies, write-origin/header checks and login rate limiting.
 - Persistent PostgreSQL tables with the `co_` prefix, preserving legacy tables/assets.
 - Original PDF/DOCX/TXT upload storage, content-hash deduplication, separate import provenance and protected downloads.
+- Explicit-folder batch intake uses the same document-storage path, verifies copied originals and stores private reports. Supporting academic/identity records, TeX sources and symbolic links are excluded from resume drafting. The personal intake library is isolated from the synthetic preview/test workspace.
 - Isolated-process text extraction with file-size, page-count, time and output limits; scanned/protected/unreadable documents become visible attention items.
 - Explicitly confirmed profile facts, optional exact source quotes, retirement and invalidation of unsent approvals.
 - Optional Groq profile-extraction connector: opt-in personal-data configuration, evidence-quoted suggestions, explicit confirmation, basic conflicting-label detection and monthly/daily request/spend reservations. It has not been exercised against a live model account.
@@ -26,13 +27,14 @@ Implemented:
 ## Verification evidence
 
 - `npm run build`: passed TypeScript checking and Vite production build on macOS ARM64 / Node 26.
-- `npm test`: 26 tests passed, including real PostgreSQL integration tests. Additional matching cases cover unknown fact IDs, false job quotes, invalid scores, cache reuse, identity/authorization minimization, stale location/profile/preferences, quota errors and budget exhaustion. Model responses are mocked in these tests: they establish contracts and failure handling, not real-model quality.
+- `npm test`: 29 tests passed, including real PostgreSQL integration tests and selected-folder classification boundaries. Matching cases cover unknown fact IDs, false job quotes, invalid scores, cache reuse, identity/authorization minimization, stale location/profile/preferences, quota errors and budget exhaustion. Model responses are mocked in these tests: they establish contracts and failure handling, not real-model quality.
 - `npm run test:browser`: passed the complete owner workflow in headless Chrome: sign in, upload/extract a synthetic PDF, confirm a fact, save a job, create/review/approve a packet, and check mobile overflow. Desktop and mobile screenshots were inspected. The test explicitly checks that approval is not represented as submission.
 - GitHub Actions run `40565883692` passed the build, all 15 tests and the browser flow on a Linux runner with Node 24. Draft PR: https://github.com/github-pratik/careerops/pull/1.
 - Initial dependency audit: zero reported vulnerabilities at install time; this is not a full security audit.
 - GitHub Actions run `40566173952` passed both application verification and the Docker/Compose smoke job: built the production image, started the app with PostgreSQL, checked health and required authentication for records, then removed isolated CI containers/volumes. Docker is not installed on this computer. Codespaces and production ARM64 images still require validation.
 - CI is pinned to Ubuntu 24.04 and uses the runner's installed Chrome to avoid repeated browser/dependency downloads. The check prints the actual browser version; normal developer environments may use the documented Playwright installation path.
 - The matching extension also passed the local browser workflow, including disabled matching controls when the provider is disconnected. Inspect the latest PR checks for its current Linux/container result.
+- A real private intake was exercised locally with successful text extraction and copied-content verification; details and review questions are in ignored private reports. Representative PDF pages were visually inspected. Imported claims have not been auto-confirmed or sent to a model provider.
 
 ## Important limitations
 

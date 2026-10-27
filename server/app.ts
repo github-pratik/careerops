@@ -4,14 +4,13 @@ import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import staticFiles from "@fastify/static";
 import { randomUUID, createHmac, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { Config } from "./config.js";
 import { transaction, type Db } from "./db.js";
 import type { Queue } from "./worker.js";
 import {
-  digest,
   factSchema,
   fileKind,
   idSchema,
@@ -24,6 +23,7 @@ import {
 } from "./domain.js";
 import { analyzeDocument, modelReady } from "./models.js";
 import { assessJob, jobSnapshot } from "./matching.js";
+import { storeDocument } from "./documents.js";
 
 const fail = (statusCode: number, message: string) =>
   Object.assign(new Error(message), { statusCode });
@@ -203,51 +203,25 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
     if (!part) throw fail(400, "Choose a document.");
     const buffer = await part.toBuffer();
     if (part.file.truncated) throw fail(413, "File exceeds 10 MB.");
-    let kind: string;
     try {
-      kind = fileKind(part.filename, buffer);
+      fileKind(part.filename, buffer);
     } catch (e) {
       throw fail(400, (e as Error).message);
     }
-    const hash = digest(buffer),
-      id = randomUUID();
-    const filename = path.basename(part.filename).slice(0, 200);
-    await writeFile(path.join(cfg.dataDir, id), buffer, {
-      mode: 0o600,
-      flag: "wx",
+    const stored = await storeDocument(db, cfg, {
+      filename: part.filename,
+      buffer,
+      source: "Browser upload",
     });
-    let storedId: string;
-    try {
-      storedId = await transaction(db, async (c) => {
-        const { rows } = await c.query(
-          "INSERT INTO co_documents(id,hash,filename,kind,bytes) VALUES($1,$2,$3,$4,$5) ON CONFLICT(hash) DO UPDATE SET hash=excluded.hash RETURNING id",
-          [id, hash, filename, kind, buffer.length],
-        );
-        const docId = rows[0].id;
-        await c.query(
-          "INSERT INTO co_imports(document_id,filename,source) VALUES($1,$2,$3)",
-          [docId, filename, "Browser upload"],
-        );
-        await c.query("INSERT INTO co_audit(action,entity_id) VALUES($1,$2)", [
-          "document_imported",
-          docId,
-        ]);
-        return docId;
-      });
-    } catch (e) {
-      await unlink(path.join(cfg.dataDir, id));
-      throw e;
-    }
-    if (storedId !== id) await unlink(path.join(cfg.dataDir, id));
     // Startup reconciliation recovers a committed upload if enqueueing is interrupted.
     try {
-      await queue.send("extract-document", { id: storedId });
+      await queue.send("extract-document", { id: stored.id });
     } catch {
       app.log.warn(
         "Document retained; extraction will be recovered on worker restart.",
       );
     }
-    return { id: storedId, duplicate: storedId !== id };
+    return { id: stored.id, duplicate: stored.duplicate };
   });
   app.get("/api/documents/:id/download", async (req, reply) => {
     const id = idSchema.parse((req.params as any).id);

@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import mammoth from "mammoth";
 const [file, kind] = process.argv.slice(2);
+// Reserve stdout for the JSON result even when a parser emits diagnostics.
+console.log = (...args: unknown[]) => console.error(...args);
 const buffer = await readFile(file);
 let text = "";
 if (kind === "txt")
@@ -12,6 +14,7 @@ else if (kind === "pdf") {
   const loading = pdfjs.getDocument({
     data: new Uint8Array(buffer),
     useSystemFonts: true,
+    verbosity: 0,
   });
   const document = await loading.promise;
   if (document.numPages > 40)
