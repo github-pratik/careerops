@@ -55,6 +55,8 @@ Implemented:
 
 ## Next development sequence
 
+Deployment preparation on 28 October: latest observed GitHub Actions run `40737767107` passed both verification and container smoke checks. `docs/DEPLOYMENT.md` records the first-release scope, target-account checks and required production/restore validation. No server credentials or production hostname are configured; the owner has been asked which hosting account is available. No production provisioning occurred. This runbook-only update requires no application test rerun; `git diff --check` verifies the documentation patch.
+
 1. Sync this extension and inspect its latest GitHub Actions result. Carry forward any CI-specific failures into this handoff.
 2. The Linux container smoke test is already verified. Validate the devcontainer and target cloud architecture; configure cloud account access, a hostname and secret entry with the owner. Check the actual budget before provisioning.
 3. Add private object storage and an encrypted off-host backup/restore drill, then deploy the read-only review foundation with HTTPS. Local testing is not the user's hosting goal.
