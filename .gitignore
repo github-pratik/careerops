@@ -2,3 +2,10 @@
 *.env.local
 n8n_data/
 keys.local.md
+node_modules/
+dist/
+.data/
+coverage/
+test-results/
+playwright-report/
+.env.cloud
