@@ -9,7 +9,7 @@ Updated 28 October 2026. This is a durable summary of decisions from the develop
 - The owner wants the agent to do routine engineering, setup and verification, explaining choices plainly and requesting user action only for missing account access, necessary factual answers or an actual approval boundary. Do not repeatedly ask the owner to choose routine implementation details.
 - Resume facts need owner verification. Present experience strongly without inventing employment, dates, qualifications, outcomes or work authorization. Quoted document text is evidence, not automatic confirmation.
 - Preferences are dynamic and editable. Compensation should reflect market, location, taxes and remote-work arrangements; do not impose an assumed universal cutoff. Actual personal preferences belong in private storage.
-- Prefer free services and the least costly adequate model for authorized delegated work. Respect provider limits with budgets, caching, backoff and legitimate fallback; do not evade limits. Do not claim token savings without measurement. Delegate only when authorized and useful.
+- Target zero recurring cost. A previously discussed spending ceiling is an exception ceiling, not standing permission to provision paid services; propose any unavoidable charge separately and obtain specific owner approval. Distinguish Always Free allowances from expiring trial credits and gross cost estimates from actual free-tier eligibility. Prefer the least costly adequate model for authorized delegated work. Respect provider limits with budgets, caching, backoff and legitimate fallback; do not evade limits. Do not claim token savings without measurement. Delegate only when authorized and useful.
 
 ## Architecture in use
 
