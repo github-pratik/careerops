@@ -1,6 +1,6 @@
 # CareerOps agent handoff
 
-Read `docs/DEVELOPMENT.md` and `docs/IMPLEMENTATION_STATUS.md` before changing this repository. They describe implemented behavior and remaining work. `docs/CLOUD_APPLICATION_PLAN.md` is a proposal, not proof that all capabilities exist.
+Read `docs/DECISIONS.md`, `docs/DEVELOPMENT.md` and `docs/IMPLEMENTATION_STATUS.md` before changing this repository. They preserve conversation decisions, implemented behavior and remaining work. `docs/CLOUD_APPLICATION_PLAN.md` is a proposal, not proof that all capabilities exist. Private profile facts and local chat history are not in Git: do not infer missing personal facts from this handoff.
 
 ## Working rules
 
