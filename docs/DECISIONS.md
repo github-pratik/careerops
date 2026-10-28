@@ -38,3 +38,7 @@ Updated 28 October 2026. This is a durable summary of decisions from the develop
 5. Confirm hosting access and budget, implement secure private cloud storage and backup/restore, and deploy the review foundation over HTTPS. Then continue evaluated matching, one supported submission adapter and dedicated mail integration in that order.
 
 At every meaningful handoff, update this file if a decision changes and update implementation status with what actually ran, failures, blockers and next steps. Keep sensitive owner-specific changes in private storage instead.
+
+## Session review — 28 October 2026
+
+Reviewed this decision record and the implementation handoff with the owner in a follow-up session. Summarized the recorded product, cross-device continuity, privacy, zero-cost and staged-delivery decisions. The Oracle creation hold remains in force. No new product or deployment decisions were made, and no resources were provisioned. This note records the review, not a transfer of full chat history or private records.
