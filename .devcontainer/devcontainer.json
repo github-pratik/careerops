@@ -4,6 +4,7 @@
   "service": "dev",
   "workspaceFolder": "/workspaces/careerops",
   "remoteUser": "node",
+  "remoteEnv": { "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8" },
   "forwardPorts": [3100],
   "portsAttributes": {
     "3100": { "label": "CareerOps", "onAutoForward": "notify" }
