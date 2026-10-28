@@ -9,5 +9,9 @@
     "3100": { "label": "CareerOps", "onAutoForward": "notify" }
   },
   "postCreateCommand": "npm ci && npm run build && node --import tsx scripts/setup-devcontainer.ts",
-  "customizations": { "vscode": { "extensions": ["dbaeumer.vscode-eslint"] } }
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint", "openai.chatgpt"]
+    }
+  }
 }

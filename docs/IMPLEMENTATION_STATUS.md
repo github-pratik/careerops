@@ -23,6 +23,7 @@ Implemented:
 - Fact-selected application packets with immutable payload/hash and profile version; HTML resume preview for browser printing; repeated approval creates one audit event. Approval is not submission.
 - Node/Docker/Caddy deployment scaffold, separate from the legacy n8n Compose file.
 - GitHub Actions checks, locked dependencies, optional Codespaces/devcontainer configuration and cross-device development instructions.
+- Devcontainer configuration requests the official Codex VS Code extension (`openai.chatgpt`) for the Codespaces fallback. Its JSON was parsed and the extension ID checked locally; this does not establish a successful container build, extension installation or Codex sign-in. No application source changed in this configuration update.
 
 ## Verification evidence
 
