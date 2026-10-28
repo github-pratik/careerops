@@ -60,7 +60,11 @@ If both computers have edits, retain both on separate branches and integrate del
 
 ## Cloud development option
 
-A GitHub Codespaces configuration is included for a shared browser-accessible development environment, using a dedicated development PostgreSQL service. The account's Codespaces availability/quota must be checked before use. It is an optional development environment, not the 24/7 production host. Do not put real resumes or production secrets into a public repository or committed devcontainer configuration.
+Prefer a native Codex Cloud environment for coding tasks that must continue while either laptop is asleep. The owner signs in once; an agent can then prepare the repository, dependencies and checks in the environment setup flow. Reopen the same cloud task from the other device to continue its conversation. A new task has separate working files. Official setup guidance: https://learn.chatgpt.com/docs/environments/cloud-environments.
+
+Select the implementation branch recorded in the handoff, not an assumed default-branch implementation. Validate Node 24, `npm ci`, `npm run build`, `npm test` and `npm run test:browser` before declaring the environment ready. Embedded PostgreSQL requires an unprivileged process and local shared memory/sockets; browser dependencies must also be available. Keep forwarded ports private. Do not import local `.data`, personal records or credentials during coding-environment setup. Account access, limits and a successful environment setup/publish still need verification.
+
+A GitHub Codespaces configuration remains an optional fallback for a browser-accessible editor, using a dedicated development PostgreSQL service. It does not currently install or authenticate Codex, migrate this chat or provide continuous operation. Check account permissions, availability, actual quota and billing controls before creating one. Neither coding environment is the 24/7 production host. Do not put real resumes or production secrets into a public repository or committed devcontainer configuration.
 
 ## Deployment boundary
 

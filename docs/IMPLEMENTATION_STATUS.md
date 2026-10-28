@@ -49,6 +49,7 @@ Implemented:
 8. The UI exposes current capabilities honestly. AI scores exist only after a valid provider response and are labeled estimates. There is no fabricated application count, live cost meter or claim of connected employer integrations.
 9. GitHub sync carries code and handoff notes. Each laptop's `.data/` remains separate; production documents will be shared through the cloud service, not Git. The current chat and private facts do not transfer with a clone.
 10. Connector-assisted Drive intake is a one-time private operation. The application has no persistent Drive OAuth connection, folder watcher or continuous cloud document synchronization. Private source manifests and intake reports remain excluded from Git.
+11. Native Codex Cloud is the preferred cross-device coding path. Setup has not been completed or published: the opened web setup requires owner sign-in. A read-only Codespaces API check returned HTTP 403 because the current GitHub CLI token lacks the `codespace` scope; no workspace was created and no additional permission was granted. Codespaces quota/billing is unverified. Local chat state is not automatically migrated to a cloud task.
 
 ## Next development sequence
 
