@@ -1,6 +1,6 @@
 # Implementation handoff
 
-Updated: 27 October 2026. Active development branch: `codex/cloud-workspace-foundation`.
+Updated: 28 October 2026. Active development branch: `codex/cloud-workspace-foundation`.
 
 ## Actual release state
 
@@ -35,6 +35,7 @@ Implemented:
 - CI is pinned to Ubuntu 24.04 and uses the runner's installed Chrome to avoid repeated browser/dependency downloads. The check prints the actual browser version; normal developer environments may use the documented Playwright installation path.
 - The matching extension also passed the local browser workflow, including disabled matching controls when the provider is disconnected. Inspect the latest PR checks for its current Linux/container result.
 - A real private intake was exercised locally with successful text extraction and copied-content verification; details and review questions are in ignored private reports. Representative PDF pages were visually inspected. Imported claims have not been auto-confirmed or sent to a model provider.
+- A one-time connected Drive intake also completed locally: original bytes were hash-verified, identical documents reused, text extraction completed and the confirmed-fact table was verified unchanged before/after. Source identifiers, inventories and results are stored only in ignored private reports. This operation changed no application source; the existing application/container CI run `40574430162` passed, and `git diff --check` passed for this documentation update. Build/browser tests were not rerun for the documentation-only change.
 
 ## Important limitations
 
@@ -47,6 +48,7 @@ Implemented:
 7. Single-owner authentication needs a production security review, proxy/rate-limit assessment, secret management and recovery workflow.
 8. The UI exposes current capabilities honestly. AI scores exist only after a valid provider response and are labeled estimates. There is no fabricated application count, live cost meter or claim of connected employer integrations.
 9. GitHub sync carries code and handoff notes. Each laptop's `.data/` remains separate; production documents will be shared through the cloud service, not Git. The current chat and private facts do not transfer with a clone.
+10. Connector-assisted Drive intake is a one-time private operation. The application has no persistent Drive OAuth connection, folder watcher or continuous cloud document synchronization. Private source manifests and intake reports remain excluded from Git.
 
 ## Next development sequence
 
