@@ -33,7 +33,7 @@ const labels: Record<string, string> = {
   ready: "Ready",
   needs_attention: "Needs attention",
   review: "Awaiting review",
-  approved: "Approved · not submitted",
+  approved: "Approved draft",
   stale: "Needs a fresh draft",
   closed: "Listing closed",
   submitted: "Reported submitted",
@@ -256,7 +256,7 @@ function App() {
           </div>
           <div className="mode">
             <span className="dot" />
-            Review workspace<small>External actions not connected</small>
+            Review workspace<small>Portal submission is manual</small>
           </div>
         </header>
         {error && (

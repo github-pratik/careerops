@@ -220,7 +220,7 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
         aiConnected: modelReady(),
       },
       operatingMode:
-        "Review workspace — external submission and email are not connected",
+        "Review workspace — portal submission is manual; email requires separate reviewed sends",
     };
   });
   app.post("/api/documents", async (req) => {
