@@ -26,7 +26,11 @@ jobs:
           echo "PLAYWRIGHT_CHROME_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
       - run: npm run test:browser
   container:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     needs: verify
     timeout-minutes: 10
     env:
@@ -48,6 +52,11 @@ jobs:
             const records = await fetch("http://127.0.0.1:3100/api/state");
             if (records.status !== 401) throw new Error("Records were not protected");
           '
+      - name: Verify encrypted backup and isolated restore in production image
+        run: |
+          docker compose --project-name careerops-ci -f infra/compose.yml exec -T -e BACKUP_PASSPHRASE=ci-only-backup-passphrase-long app npm run backup -- create /app/data/smoke.coback
+          docker compose --project-name careerops-ci -f infra/compose.yml exec -T db psql -U careerops -d postgres -c 'CREATE DATABASE recoverycheck OWNER careerops'
+          docker compose --project-name careerops-ci -f infra/compose.yml run --rm --no-deps -e DATABASE_URL=postgres://careerops:ci-only-database-password@db:5432/recoverycheck -e DATA_DIR=/app/data/recovered -e BACKUP_PASSPHRASE=ci-only-backup-passphrase-long app npm run backup -- restore /app/data/smoke.coback
       - name: Collect diagnostics on failure
         if: failure()
         run: docker compose --project-name careerops-ci -f infra/compose.yml logs --tail 80

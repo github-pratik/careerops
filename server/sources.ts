@@ -1,11 +1,20 @@
 import { sourceSchema } from "./domain.js";
-const plain = (v: unknown) =>
-  String(v || "")
+export const plain = (value: unknown) => {
+  let text = String(value || "");
+  // Greenhouse descriptions may contain two layers of encoded HTML.
+  for (let i = 0; i < 2; i++)
+    text = text
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#(?:39|x27);/gi, "'")
+      .replace(/&nbsp;/g, " ");
+  return text
     .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
     .trim();
+};
 export async function fetchBoard(source: {
   provider: string;
   board: string;
@@ -42,9 +51,12 @@ export async function fetchBoard(source: {
   const jobs = s.provider === "lever" ? body : body.jobs;
   if (!Array.isArray(jobs))
     throw new Error("Source returned an unexpected format.");
-  return jobs
+  if (jobs.length > 500)
+    throw new Error(
+      "Board exceeds 500 listings. Scan was not applied to avoid closing jobs from an incomplete response.",
+    );
+  const normalized = jobs
     .filter((j: any) => j.isListed !== false)
-    .slice(0, 500)
     .map((j: any) => ({
       externalId: String(j.id || j.jobUrl),
       company: s.company,
@@ -65,6 +77,15 @@ export async function fetchBoard(source: {
           j.description ||
           "",
       ).slice(0, 60000),
-    }))
-    .filter((j) => j.title && j.url.startsWith("https://"));
+    }));
+  if (
+    normalized.some(
+      (j) =>
+        !j.title ||
+        !j.url.startsWith("https://") ||
+        j.externalId === "undefined",
+    )
+  )
+    throw new Error("Source includes invalid listings. Scan was not applied.");
+  return normalized;
 }

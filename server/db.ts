@@ -79,6 +79,24 @@ export async function migrate(db: Db) {
       profile_version integer NOT NULL, job_hash text NOT NULL, output jsonb NOT NULL,
       model text NOT NULL, policy_version integer NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
     );
+    CREATE TABLE IF NOT EXISTS co_mail_drafts (
+      id uuid PRIMARY KEY, payload jsonb NOT NULL, hash text NOT NULL,
+      state text NOT NULL DEFAULT 'draft' CHECK(state IN ('draft','sending','sent','unknown','failed')),
+      provider_id text, attempted_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS co_mail_messages (
+      id text PRIMARY KEY, thread_id text NOT NULL, sender text NOT NULL, subject text NOT NULL,
+      snippet text NOT NULL, received_at timestamptz NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS co_mail_state (
+      id boolean PRIMARY KEY DEFAULT true CHECK(id), address text NOT NULL, verified_at timestamptz NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS co_applications (
+      id uuid PRIMARY KEY, packet_id uuid NOT NULL UNIQUE REFERENCES co_packets(id),
+      status text NOT NULL CHECK(status IN ('submitted','interview','offer','rejected','withdrawn')),
+      evidence text NOT NULL, applied_at timestamptz NOT NULL, follow_up_at timestamptz,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
     CREATE INDEX IF NOT EXISTS co_assessment_job_idx ON co_assessments(job_id,created_at DESC);
   `);
 }

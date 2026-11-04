@@ -76,6 +76,7 @@ export async function assessJob(db: Db, id: string) {
     rows: [job],
   } = await db.query("SELECT * FROM co_jobs WHERE id=$1", [id]);
   if (!job) throw new Error("Job not found.");
+  if (job.state === "closed") throw new Error("This listing is closed.");
   const {
     rows: [settings],
   } = await db.query("SELECT * FROM co_settings");

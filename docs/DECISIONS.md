@@ -42,3 +42,7 @@ At every meaningful handoff, update this file if a decision changes and update i
 ## Session review — 28 October 2026
 
 Reviewed this decision record and the implementation handoff with the owner in a follow-up session. Summarized the recorded product, cross-device continuity, privacy, zero-cost and staged-delivery decisions. The Oracle creation hold remains in force. No new product or deployment decisions were made, and no resources were provisioned. This note records the review, not a transfer of full chat history or private records.
+
+## Build continuation — 4 November 2026
+
+The owner requested continued implementation with a three-hour completion target. Engineering proceeded on a separate release-readiness branch. The deadline does not establish production completion or revoke the explicit Oracle creation hold. Runtime connectors must remain disabled until privately configured and authorized; test doubles are not live-provider evidence. Manual application reports and mail-provider acceptance remain distinct from automated portal submission and confirmed employer delivery.

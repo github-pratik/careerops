@@ -76,3 +76,24 @@ The larger scope remains in `CLOUD_APPLICATION_PLAN.md` and `CLOUD_APPLICATION_T
 ## Cross-device continuation
 
 On another computer, fetch the development branch and read this file, `AGENTS.md` and `docs/DECISIONS.md` before editing. The decision record preserves generic product, architecture, autonomy and continuity choices from the conversation; it is not a full transcript. Owner-specific facts are in a separate ignored private handoff which has not been transferred off the business laptop. Preserve local changes, use fast-forward-only pulls on a clean checkout, and keep different concurrent tasks on separate branches. The user prefers a low-cost adequate model for any explicitly authorized delegated work; no subagents were used for this foundation. This handoff-only change passed `git diff --check`; application tests were not rerun because no executable code changed.
+
+## Release-readiness build — 4 November 2026
+
+Development branch: `codex/release-readiness`, based on `dc28772`. This is a new development increment; the service is still not deployed and the Oracle creation hold remains. Existing local deletions of CLAUDE.md and .claude/settings.json were left outside this change.
+
+Implemented in this increment:
+
+- Transactional board refresh closes missing jobs, reopens returned jobs, invalidates changed/closed-job packets and serializes against approval. Failed/malformed/oversized feeds preserve existing listings. Closed listings are visibly labelled and blocked from fresh matching/preparation.
+- Optional Groq and Gmail runtime configuration is passed through application Compose. Greenhouse entity-encoded descriptions become readable text.
+- Screening answers/notes are editable and visible in immutable review packets; the exact packet can be downloaded. Greenhouse question discovery exposes required fields/options and consent warnings. It is a read-only review aid, not a submission adapter.
+- Owner-reported submission tracking with evidence, historical outcomes and follow-up dates. These records never imply an automated submission or verified employer acceptance.
+- Dedicated Gmail OAuth refresh-token connector, explicit bounded inbox-summary sync, manually reviewed hash-bound sends, serialized claims, a three-attempt rolling daily cap and unknown-outcome reconciliation. Credentials/scopes/account setup and live verification remain pending. No real email was sent. Full thread synchronization, attachments, setup wizard and automatic follow-ups are not implemented.
+- AES-256-GCM/scrypt encrypted paired database/document snapshots and fresh-destination restore. Synthetic restore checks original hashes, import provenance and packet integrity. Actual scheduled off-host storage, retention and a production restore drill remain pending. See OPERATIONS.md for limits and commands.
+- Patched pinned @fastify/static from 10.1.8 to 10.1.10; install-time audit reports zero vulnerabilities. This is not a comprehensive security audit.
+- Added native ARM64 to the container CI matrix; actual CI results must be checked before claiming target validation.
+
+Local verification: production build and 41 tests passed. The expanded browser scenario passed PDF upload/extraction, fact confirmation, screening-answer review, packet approval, manual submission/outcome tracking, email draft preparation with sending disabled while disconnected, and mobile overflow checks. OAuth/provider tests use synthetic responses. The initial local PostgreSQL launch failed because the cached runtime was missing an ICU library; a fresh locked installation restored it and subsequent tests passed. The historical Codespaces teardown failure has not been reproduced or resolved in that remote workspace. No Docker executable is installed locally, so container/ARM checks are delegated to CI.
+
+Remaining release gates: real host/HTTPS approval and access; target container validation; actual encrypted off-host backup/restore; privately configured provider consent and live testing; verified candidate facts. Automatic portal submissions and real employer screening assessment handling remain unfinished. No production resources have been created.
+
+Live read-only feed verification on 4 November: Greenhouse's public board returned 20 listings and Linear's Ashby board returned 31, all with descriptions. Greenhouse question discovery returned 23 questions (19 required) and one consent section for a current posting. The live API exposed null optional compliance arrays; the parser now accepts those and a regression test covers it. No candidate information was transmitted and no application was submitted. These checks establish those examples only, not comprehensive employer coverage.
