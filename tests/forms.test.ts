@@ -53,3 +53,28 @@ it("turns encoded Greenhouse HTML into readable job text", () => {
     plain("&amp;lt;p&amp;gt;Build Python &amp;amp; React&amp;lt;/p&amp;gt;"),
   ).toBe("Build Python & React");
 });
+
+it("accepts absent optional compliance sections returned as null by live Greenhouse", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        id: 123,
+        title: "Engineer",
+        questions: [
+          {
+            label: "First name",
+            required: true,
+            fields: [{ name: "first_name", type: "input_text", values: null }],
+          },
+        ],
+        compliance: null,
+        location_questions: null,
+        data_compliance: null,
+      }),
+    ),
+  );
+  const form = await greenhouseForm("fixture", "123");
+  expect(form.questions).toHaveLength(1);
+  expect(form.questions[0].fields[0].values).toEqual([]);
+  expect(form.dataCompliance).toEqual([]);
+});

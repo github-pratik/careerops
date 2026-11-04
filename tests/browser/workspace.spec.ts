@@ -167,6 +167,15 @@ test("owner can upload a PDF, confirm a fact, prepare and approve a packet", asy
     page.getByRole("button", { name: "Send reviewed email" }),
   ).toBeDisabled();
   await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: ".data/screenshots/email-mobile.png",
+    fullPage: true,
+  });
   await page.getByRole("button", { name: "Overview", exact: true }).click();
   await page.screenshot({
     path: ".data/screenshots/mobile.png",

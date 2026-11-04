@@ -15,7 +15,8 @@ const question = z.object({
               label: z.string().max(1000),
             }),
           )
-          .default([]),
+          .nullish()
+          .transform((v) => v || []),
       }),
     )
     .max(20),
@@ -24,9 +25,20 @@ const formSchema = z.object({
   id: z.union([z.number(), z.string()]),
   title: z.string().max(500),
   questions: z.array(question).max(60),
-  location_questions: z.array(question).max(20).default([]),
-  compliance: z.array(question).max(30).default([]),
-  data_compliance: z.array(z.record(z.string(), z.unknown())).default([]),
+  location_questions: z
+    .array(question)
+    .max(20)
+    .nullish()
+    .transform((v) => v || []),
+  compliance: z
+    .array(question)
+    .max(30)
+    .nullish()
+    .transform((v) => v || []),
+  data_compliance: z
+    .array(z.record(z.string(), z.unknown()))
+    .nullish()
+    .transform((v) => v || []),
   demographic_questions: z.unknown().optional(),
 });
 export async function greenhouseForm(board: string, jobId: string) {
