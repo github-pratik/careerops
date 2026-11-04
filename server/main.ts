@@ -5,6 +5,9 @@ import { startWorker } from "./worker.js";
 const cfg = config(),
   db = createDb(cfg.databaseUrl);
 await migrate(db);
+await db.query(
+  "UPDATE co_mail_drafts SET state='unknown' WHERE state='sending'",
+);
 const worker = await startWorker(db, cfg);
 const app = await createApp(db, cfg, worker);
 await app.listen({ port: cfg.port, host: process.env.HOST || "127.0.0.1" });

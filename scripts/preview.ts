@@ -5,6 +5,9 @@ const workspace = process.argv.includes("--workspace=library")
   ? "library"
   : "preview";
 const store = await startLocalStore(workspace);
+await store.db.query(
+  "UPDATE co_mail_drafts SET state='unknown' WHERE state='sending'",
+);
 const worker = await startWorker(store.db, store.cfg);
 const app = await createApp(store.db, store.cfg, worker);
 await app.listen({ port: 3100, host: "127.0.0.1" });

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import { MailWorkspace } from "./mail.js";
 
 async function api(url: string, method = "GET", body?: unknown) {
   const response = await fetch("/api" + url, {
@@ -34,6 +35,12 @@ const labels: Record<string, string> = {
   review: "Awaiting review",
   approved: "Approved · not submitted",
   stale: "Needs a fresh draft",
+  closed: "Listing closed",
+  submitted: "Reported submitted",
+  interview: "Interview",
+  offer: "Offer",
+  rejected: "Rejected",
+  withdrawn: "Withdrawn",
 };
 function Badge({ state }: { state: string }) {
   return <span className={"badge " + state}>{labels[state] || state}</span>;
@@ -48,6 +55,11 @@ function App() {
   const [selectedDoc, setSelectedDoc] = useState<any>(null),
     [selectedJob, setSelectedJob] = useState<any>(null),
     [selectedPacket, setSelectedPacket] = useState<any>(null);
+  const [employerForm, setEmployerForm] = useState<any>(null),
+    [screeningAnswers, setScreeningAnswers] = useState<
+      { question: string; answer: string }[]
+    >([]),
+    [packetNote, setPacketNote] = useState("");
   const [factIds, setFactIds] = useState<string[]>([]),
     [query, setQuery] = useState("");
   async function refresh() {
@@ -168,6 +180,7 @@ function App() {
     "Profile",
     "Opportunities",
     "Review",
+    "Email",
     "Activity",
   ];
   const descriptions: Record<string, string> = {
@@ -176,6 +189,8 @@ function App() {
     Profile: "The experience behind every application. Confirm it once.",
     Opportunities: "Collect roles worth your time. Keep the full context.",
     Review: "Know exactly what an application will say about you.",
+    Email:
+      "Review each message, track delivery, and read your dedicated inbox.",
     Activity: "A record of your decisions, changes, and progress.",
   };
   return (
@@ -1046,6 +1061,7 @@ function App() {
                       <small>{j.company}</small>
                       <h3>{j.title}</h3>
                       <p>{j.location}</p>
+                      {j.state === "closed" && <Badge state="closed" />}
                       {state.assessments?.find(
                         (a: any) => a.job_id === j.id,
                       ) && (
@@ -1060,7 +1076,10 @@ function App() {
                     <button
                       className="secondary"
                       disabled={
-                        busy || !state.capabilities.aiConnected || !facts.length
+                        busy ||
+                        j.state === "closed" ||
+                        !state.capabilities.aiConnected ||
+                        !facts.length
                       }
                       title={
                         state.capabilities.aiConnected
@@ -1078,8 +1097,12 @@ function App() {
                     </button>
                     <button
                       className="secondary"
+                      disabled={busy || j.state === "closed"}
                       onClick={() => {
                         setSelectedJob(j);
+                        setEmployerForm(null);
+                        setScreeningAnswers([]);
+                        setPacketNote("");
                         const assessment = state.assessments?.find(
                           (a: any) => a.job_id === j.id && !a.stale,
                         );
@@ -1127,6 +1150,136 @@ function App() {
                   <summary>Read full description</summary>
                   <p className="preserve">{selectedJob.description}</p>
                 </details>
+                <h3>Screening questions and notes</h3>
+                <p>
+                  Copy questions from the employer form and write your own
+                  answers. These answers are retained in the exact packet you
+                  review. Never infer eligibility from a match score.
+                </p>
+                {selectedJob.source_id && (
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        const form = await api(
+                          "/jobs/" + selectedJob.id + "/form",
+                          "POST",
+                          {},
+                        );
+                        setEmployerForm(form);
+                      }, "Employer questions loaded for review")
+                    }
+                  >
+                    Load Greenhouse questions
+                  </button>
+                )}
+                {employerForm && (
+                  <div className="info">
+                    <p>{employerForm.notice}</p>
+                    {employerForm.questions.map((q: any, i: number) => (
+                      <p key={i}>
+                        <strong>
+                          {q.required ? "Required: " : "Optional: "}
+                          {q.label}
+                        </strong>{" "}
+                        {q.fields.map((f: any) => f.type).join(", ")}
+                        {q.fields.some((f: any) => f.values?.length > 0) && (
+                          <span>
+                            {" "}
+                            ·{" "}
+                            {q.fields
+                              .flatMap((f: any) =>
+                                f.values.map((v: any) => v.label),
+                              )
+                              .join(" / ")}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() =>
+                            setScreeningAnswers([
+                              ...screeningAnswers,
+                              { question: q.label, answer: "" },
+                            ])
+                          }
+                        >
+                          Add to my answers
+                        </button>
+                      </p>
+                    ))}
+                    {(employerForm.dataCompliance.length > 0 ||
+                      employerForm.demographicQuestions) && (
+                      <p>
+                        Consent or demographic questions also exist. Review them
+                        directly on the employer portal.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {screeningAnswers.map((a, i) => (
+                  <div className="review-fact" key={i}>
+                    <label>
+                      Question {i + 1}
+                      <input
+                        maxLength={500}
+                        value={a.question}
+                        onChange={(e) =>
+                          setScreeningAnswers(
+                            screeningAnswers.map((v, k) =>
+                              k === i ? { ...v, question: e.target.value } : v,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      My answer {i + 1}
+                      <textarea
+                        maxLength={3000}
+                        value={a.answer}
+                        onChange={(e) =>
+                          setScreeningAnswers(
+                            screeningAnswers.map((v, k) =>
+                              k === i ? { ...v, answer: e.target.value } : v,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                    <button
+                      className="secondary"
+                      onClick={() =>
+                        setScreeningAnswers(
+                          screeningAnswers.filter((_, k) => k !== i),
+                        )
+                      }
+                    >
+                      Remove question {i + 1}
+                    </button>
+                  </div>
+                ))}
+                <button
+                  className="secondary"
+                  disabled={screeningAnswers.length >= 60}
+                  onClick={() =>
+                    setScreeningAnswers([
+                      ...screeningAnswers,
+                      { question: "", answer: "" },
+                    ])
+                  }
+                >
+                  Add screening question
+                </button>
+                <label>
+                  Packet notes
+                  <textarea
+                    maxLength={3000}
+                    value={packetNote}
+                    onChange={(e) => setPacketNote(e.target.value)}
+                  />
+                </label>
                 <h3>Select confirmed facts for this application</h3>
                 {selectedAssessment && (
                   <div className="info">
@@ -1194,7 +1347,13 @@ function App() {
                   </p>
                 )}
                 <button
-                  disabled={busy || !factIds.length}
+                  disabled={
+                    busy ||
+                    !factIds.length ||
+                    screeningAnswers.some(
+                      (a) => !a.question.trim() || !a.answer.trim(),
+                    )
+                  }
                   onClick={() =>
                     void run(async () => {
                       await api(
@@ -1202,8 +1361,8 @@ function App() {
                         "POST",
                         {
                           factIds,
-                          note: "",
-                          answers: [],
+                          note: packetNote,
+                          answers: screeningAnswers,
                           assessmentId:
                             selectedAssessment && !selectedAssessment.stale
                               ? selectedAssessment.id
@@ -1227,6 +1386,88 @@ function App() {
         )}
         {page === "Review" && (
           <>
+            <section className="panel">
+              <h2>Application tracker</h2>
+              <p>
+                Record applications you sent yourself. These records are owner
+                reports, not automated employer confirmations. Follow-up dates
+                are reminders here; no email is sent.
+              </p>
+              {!state.applications?.length && <p>No submissions recorded.</p>}
+              {state.applications?.map((a: any) => (
+                <details key={a.id} className="review-fact">
+                  <summary>
+                    {a.company} · {a.title} — {labels[a.status] || a.status}
+                  </summary>
+                  <p>
+                    Applied {date(a.applied_at)} · {a.evidence}
+                  </p>
+                  {a.follow_up_at && (
+                    <p>
+                      {new Date(a.follow_up_at).getTime() <= Date.now()
+                        ? "Follow-up due"
+                        : "Follow-up planned"}
+                      : {date(a.follow_up_at)}
+                    </p>
+                  )}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const data = fields(e);
+                      void run(
+                        () =>
+                          api("/applications/" + a.id + "/status", "POST", {
+                            status: data.status,
+                            evidence: data.evidence,
+                            followUpAt: data.followUpAt
+                              ? new Date(
+                                  String(data.followUpAt) + "T12:00:00",
+                                ).toISOString()
+                              : null,
+                          }),
+                        "Application record updated",
+                      );
+                    }}
+                  >
+                    <label>
+                      Application status
+                      <select name="status" defaultValue={a.status}>
+                        {[
+                          "submitted",
+                          "interview",
+                          "offer",
+                          "rejected",
+                          "withdrawn",
+                        ].map((v) => (
+                          <option key={v} value={v}>
+                            {labels[v]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Outcome details
+                      <textarea
+                        name="evidence"
+                        required
+                        minLength={10}
+                        maxLength={3000}
+                        defaultValue={a.evidence}
+                      />
+                    </label>
+                    <label>
+                      Next follow-up date
+                      <input
+                        type="date"
+                        name="followUpAt"
+                        defaultValue={a.follow_up_at?.slice(0, 10) || ""}
+                      />
+                    </label>
+                    <button disabled={busy}>Update application</button>
+                  </form>
+                </details>
+              ))}
+            </section>
             <div className="info">
               Approval saves the exact version you reviewed. Submission is not
               connected yet; approved packets stay here and are never counted as
@@ -1274,6 +1515,74 @@ function App() {
                 >
                   Open resume preview / print to PDF ↗
                 </a>
+                <a
+                  className="button secondary"
+                  href={"/api/packets/" + selectedPacket.id + "/export"}
+                >
+                  Download review packet
+                </a>
+                {selectedPacket.state === "approved" &&
+                  !state.applications?.some(
+                    (a: any) => a.packet_id === selectedPacket.id,
+                  ) && (
+                    <details>
+                      <summary>Record an application I sent myself</summary>
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const data = fields(e);
+                          void run(async () => {
+                            await api(
+                              "/packets/" + selectedPacket.id + "/application",
+                              "POST",
+                              {
+                                confirmed: true,
+                                evidence: data.evidence,
+                                appliedAt: new Date(
+                                  String(data.appliedAt) + "T00:00:00",
+                                ).toISOString(),
+                                followUpAt: data.followUpAt
+                                  ? new Date(
+                                      String(data.followUpAt) + "T12:00:00",
+                                    ).toISOString()
+                                  : null,
+                              },
+                            );
+                            setSelectedPacket(null);
+                          }, "Submission recorded as your report");
+                        }}
+                      >
+                        <label>
+                          Submission confirmation details
+                          <textarea
+                            name="evidence"
+                            required
+                            minLength={10}
+                            maxLength={3000}
+                            placeholder="Receipt reference, confirmation text, or your description of the completed submission"
+                          />
+                        </label>
+                        <label>
+                          Date applied
+                          <input
+                            name="appliedAt"
+                            type="date"
+                            required
+                            max={new Date().toLocaleDateString("en-CA")}
+                          />
+                        </label>
+                        <label>
+                          Follow-up date
+                          <input name="followUpAt" type="date" />
+                        </label>
+                        <label className="checkbox">
+                          <input type="checkbox" required />I sent this exact
+                          approved version myself.
+                        </label>
+                        <button disabled={busy}>Record my submission</button>
+                      </form>
+                    </details>
+                  )}
                 <p className="caption">
                   Authorization facts are shown below for review but are
                   excluded from the resume layout.
@@ -1294,10 +1603,26 @@ function App() {
                     <p>{f.value}</p>
                   </div>
                 ))}
+                <h3>Saved screening answers</h3>
+                {selectedPacket.payload.answers?.length ? (
+                  selectedPacket.payload.answers.map((a: any, i: number) => (
+                    <div className="review-fact" key={i}>
+                      <strong>{a.question}</strong>
+                      <p>{a.answer}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p>No screening answers included.</p>
+                )}
+                {selectedPacket.payload.note && (
+                  <p className="preserve">
+                    Notes: {selectedPacket.payload.note}
+                  </p>
+                )}
                 <div className="info">
-                  Portal-specific screening questions have not been collected.
-                  This approves the saved draft only; it does not authorize
-                  unseen answers.
+                  This approves only the facts, notes and answers shown here.
+                  Employer forms may contain additional questions or change
+                  later. Complete those directly before submitting.
                 </div>
                 <form
                   onSubmit={(e) => {
@@ -1323,6 +1648,9 @@ function App() {
               </section>
             )}
           </>
+        )}
+        {page === "Email" && (
+          <MailWorkspace state={state} busy={busy} run={run} api={api} />
         )}
         {page === "Activity" && (
           <section className="panel">

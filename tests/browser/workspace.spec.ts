@@ -81,8 +81,15 @@ test("owner can upload a PDF, confirm a fact, prepare and approve a packet", asy
     .locator("article.job")
     .filter({ hasText: "Browser Test Engineer" });
   await expect(job).toBeVisible();
-  await expect(job.getByRole("button",{name:"Assess fit"})).toBeDisabled();
+  await expect(job.getByRole("button", { name: "Assess fit" })).toBeDisabled();
   await job.getByRole("button", { name: "Prepare packet" }).click();
+  await page.getByRole("button", { name: "Add screening question" }).click();
+  await page
+    .getByLabel("Question 1", { exact: true })
+    .fill("Describe relevant experience");
+  await page
+    .getByLabel("My answer 1", { exact: true })
+    .fill("Built a document search project using Python.");
   await page.getByRole("button", { name: "Create review packet" }).click();
   await expect(
     page.getByRole("heading", { name: "Review", exact: true }),
@@ -93,6 +100,9 @@ test("owner can upload a PDF, confirm a fact, prepare and approve a packet", asy
     .first()
     .getByRole("button", { name: "Inspect packet" })
     .click();
+  await expect(
+    page.getByText("Describe relevant experience", { exact: true }),
+  ).toBeVisible();
   await page
     .getByLabel("I reviewed these details and the resume preview for accuracy.")
     .check();
@@ -102,6 +112,60 @@ test("owner can upload a PDF, confirm a fact, prepare and approve a packet", asy
       "Approved draft retained. No application has been submitted.",
     ),
   ).toBeVisible();
+  await page
+    .locator("article.job")
+    .filter({ hasText: "Browser Test Engineer" })
+    .first()
+    .getByRole("button", { name: "Inspect packet" })
+    .click();
+  await page
+    .getByText("Record an application I sent myself", { exact: true })
+    .click();
+  await page
+    .getByLabel("Submission confirmation details")
+    .fill("Synthetic browser confirmation number 456");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const localDate = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
+  await page.getByLabel("Date applied", { exact: true }).fill(localDate);
+  await page.getByLabel("I sent this exact approved version myself.").check();
+  await page.getByRole("button", { name: "Record my submission" }).click();
+  await expect(page.getByRole("status")).toBeVisible();
+  await page
+    .locator("details.review-fact")
+    .filter({ hasText: "Browser Test Company" })
+    .locator("summary")
+    .click();
+  await page.getByLabel("Application status").selectOption("interview");
+  await page
+    .getByLabel("Outcome details")
+    .fill("Synthetic browser interview invitation received");
+  await page.getByRole("button", { name: "Update application" }).click();
+  await expect(page.getByRole("status")).toBeVisible();
+  await page.getByRole("button", { name: "Email", exact: true }).click();
+  await page
+    .getByLabel("Sender address", { exact: true })
+    .fill("browser.sender@example.com");
+  await page
+    .getByLabel("Verified recipient address")
+    .fill("browser.recipient@example.com");
+  await page.getByLabel("Email subject").fill("Browser email fixture");
+  await page
+    .getByLabel("Email message")
+    .fill("Synthetic review-only email. No message should be sent.");
+  await page.getByRole("button", { name: "Save email for review" }).click();
+  await page
+    .locator("details.review-fact")
+    .filter({ hasText: "Browser email fixture" })
+    .locator("summary")
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Send reviewed email" }),
+  ).toBeDisabled();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Overview", exact: true }).click();
   await page.screenshot({
@@ -121,6 +185,12 @@ test.afterAll(async () => {
   const db = new pg.Pool({
     connectionString: `postgres://postgres:${password}@127.0.0.1:15440/postgres`,
   });
+  await db.query(
+    "DELETE FROM co_mail_drafts WHERE payload->>'subject'='Browser email fixture'",
+  );
+  await db.query(
+    "DELETE FROM co_applications WHERE packet_id IN (SELECT id FROM co_packets WHERE job_id IN (SELECT id FROM co_jobs WHERE url='https://example.com/browser-test-job'))",
+  );
   await db.query(
     "DELETE FROM co_packets WHERE job_id IN (SELECT id FROM co_jobs WHERE url='https://example.com/browser-test-job')",
   );

@@ -2,7 +2,7 @@ import { PgBoss } from "pg-boss";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
-import type { Db } from "./db.js";
+import { transaction, type Db } from "./db.js";
 import type { Config } from "./config.js";
 import { fetchBoard } from "./sources.js";
 import { randomUUID } from "node:crypto";
@@ -58,24 +58,55 @@ export async function scanSource(db: Db, id: string) {
   if (!source) return;
   try {
     const jobs = await fetchBoard(source);
-    for (const j of jobs)
-      await db.query(
-        `INSERT INTO co_jobs(id,source_id,external_id,company,title,location,url,description) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(source_id,external_id) DO UPDATE SET description=excluded.description,title=excluded.title,location=excluded.location,url=excluded.url`,
-        [
-          randomUUID(),
-          id,
-          j.externalId,
-          j.company,
-          j.title,
-          j.location,
-          j.url,
-          j.description,
-        ],
+    await transaction(db, async (c) => {
+      // Use the same lock as packet approval so a scan cannot race that decision.
+      await c.query("SELECT * FROM co_settings FOR UPDATE");
+      for (const j of jobs) {
+        const {
+          rows: [previous],
+        } = await c.query(
+          "SELECT * FROM co_jobs WHERE source_id=$1 AND external_id=$2",
+          [id, j.externalId],
+        );
+        if (
+          previous &&
+          ["description", "title", "location", "url"].some(
+            (k) => previous[k] !== j[k as keyof typeof j],
+          )
+        )
+          await c.query(
+            "UPDATE co_packets SET state='stale' WHERE job_id=$1 AND state IN ('review','approved')",
+            [previous.id],
+          );
+        await c.query(
+          `INSERT INTO co_jobs(id,source_id,external_id,company,title,location,url,description) VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+           ON CONFLICT(source_id,external_id) DO UPDATE SET description=excluded.description,title=excluded.title,location=excluded.location,url=excluded.url,state=CASE WHEN co_jobs.state='closed' THEN 'new' ELSE co_jobs.state END`,
+          [
+            randomUUID(),
+            id,
+            j.externalId,
+            j.company,
+            j.title,
+            j.location,
+            j.url,
+            j.description,
+          ],
+        );
+      }
+      const { rows: closed } = await c.query(
+        "UPDATE co_jobs SET state='closed' WHERE source_id=$1 AND NOT(external_id=ANY($2::text[])) AND state<>'closed' RETURNING id",
+        [id, jobs.map((j) => j.externalId)],
       );
-    await db.query(
-      "UPDATE co_sources SET last_scan=now(),last_error=NULL WHERE id=$1",
-      [id],
-    );
+      if (closed.length)
+        await c.query(
+          "UPDATE co_packets SET state='stale' WHERE job_id=ANY($1::uuid[]) AND state IN ('review','approved')",
+          [closed.map((j) => j.id)],
+        );
+      await c.query(
+        "UPDATE co_sources SET last_scan=now(),last_error=NULL WHERE id=$1",
+        [id],
+      );
+    });
   } catch (e) {
     await db.query("UPDATE co_sources SET last_error=$2 WHERE id=$1", [
       id,

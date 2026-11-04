@@ -2,7 +2,7 @@
 
 ## Application workspace under development
 
-The repository now includes a TypeScript/React application with a private document library, extracted resume text, confirmed profile facts, public company-board imports, review packets and version-bound approvals. Optional Groq integration proposes source-quoted facts for review. **Automatic portal submission, employer email and production cloud deployment are not implemented yet.** Approval is never displayed as a completed application.
+The repository now includes a TypeScript/React application with a private document library, extracted resume text, confirmed profile facts, public company-board imports, review packets and version-bound approvals. Optional Groq integration proposes source-quoted facts for review. **Automatic portal submission and production cloud deployment remain incomplete.** Dedicated Gmail now supports manually reviewed sends and bounded inbox-summary sync when privately configured with OAuth credentials; live verification is pending. Approval is never displayed as a completed application.
 
 The optional matching feature compares full job descriptions with confirmed experience, explains matches/gaps using source references and recommends facts for review packets. Private preferences can change without source edits. AI needs a configured, privacy-approved provider; live model quality evaluation is still pending.
 

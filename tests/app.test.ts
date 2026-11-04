@@ -11,8 +11,14 @@ import EmbeddedPostgres from "embedded-postgres";
 import { mkdtemp, readFile, writeFile, unlink } from "node:fs/promises";
 import { createDb, migrate, type Db } from "../server/db.js";
 import { createApp } from "../server/app.js";
+import { randomUUID } from "node:crypto";
 import { packetHash, fileKind } from "../server/domain.js";
-import { extractDocument, startWorker } from "../server/worker.js";
+import { extractDocument, scanSource, startWorker } from "../server/worker.js";
+import {
+  backupWorkspace,
+  restoreWorkspace,
+  decryptSnapshot,
+} from "../server/backup.js";
 import type { Config } from "../server/config.js";
 let postgres: EmbeddedPostgres,
   db: Db,
@@ -274,17 +280,15 @@ describe("job matching and preparation", () => {
   function enableModel(output: unknown = makeOutput()) {
     vi.stubEnv("GROQ_API_KEY", "synthetic-test-key");
     vi.stubEnv("ALLOW_PERSONAL_DATA_TO_GROQ", "true");
-    return vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            choices: [{ message: { content: JSON.stringify(output) } }],
-            usage: { prompt_tokens: 1000, completion_tokens: 300 },
-          }),
-          { status: 200 },
-        ),
-      );
+    return vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify(output) } }],
+          usage: { prompt_tokens: 1000, completion_tokens: 300 },
+        }),
+        { status: 200 },
+      ),
+    );
   }
   beforeAll(async () => {
     factId = (
@@ -436,5 +440,415 @@ describe("queue and utilities", () => {
   it("hashes object keys consistently and rejects null-byte text", () => {
     expect(packetHash({ a: 1, b: 2 })).toBe(packetHash({ b: 2, a: 1 }));
     expect(() => fileKind("x.txt", Buffer.from([0]))).toThrow();
+  });
+});
+
+describe("source lifecycle", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+  it("closes removed listings, invalidates changed packets, and preserves jobs on feed failure", async () => {
+    const source = randomUUID();
+    await db.query(
+      "INSERT INTO co_sources(id,provider,board,company) VALUES($1,'lever','fixture-board','Fixture Board')",
+      [source],
+    );
+    const posting = {
+      id: "fixture-1",
+      text: "Engineer",
+      hostedUrl: "https://example.com/fixture-source",
+      descriptionPlain:
+        "Build systems using Python and collaborate with engineers.",
+      categories: { location: "Remote" },
+    };
+    const provider = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify([posting])));
+    await scanSource(db, source);
+    const {
+      rows: [job],
+    } = await db.query("SELECT * FROM co_jobs WHERE source_id=$1", [source]);
+    const factId = (
+      await request("POST", "/facts", {
+        category: "skill",
+        label: "Source lifecycle Python",
+        value: "Python",
+        confirmed: true,
+      })
+    ).json().id;
+    const packet = (
+      await request("POST", `/jobs/${job.id}/packets`, { factIds: [factId] })
+    ).json();
+    expect(
+      (
+        await request("POST", `/packets/${packet.id}/approve`, {
+          hash: packet.hash,
+        })
+      ).statusCode,
+    ).toBe(200);
+    provider.mockResolvedValue(
+      new Response(JSON.stringify([{ ...posting, text: "Senior Engineer" }])),
+    );
+    await scanSource(db, source);
+    expect(
+      (await db.query("SELECT state FROM co_packets WHERE id=$1", [packet.id]))
+        .rows[0].state,
+    ).toBe("stale");
+    provider.mockResolvedValue(new Response("{}", { status: 503 }));
+    await expect(scanSource(db, source)).rejects.toThrow("503");
+    expect(
+      (await db.query("SELECT state FROM co_jobs WHERE id=$1", [job.id]))
+        .rows[0].state,
+    ).toBe("new");
+    provider.mockResolvedValue(new Response("[]"));
+    await scanSource(db, source);
+    expect(
+      (await db.query("SELECT state FROM co_jobs WHERE id=$1", [job.id]))
+        .rows[0].state,
+    ).toBe("closed");
+    expect(
+      (await request("POST", `/jobs/${job.id}/packets`, { factIds: [factId] }))
+        .statusCode,
+    ).toBe(409);
+    provider.mockResolvedValue(new Response(JSON.stringify([posting])));
+    await scanSource(db, source);
+    expect(
+      (await db.query("SELECT state FROM co_jobs WHERE id=$1", [job.id]))
+        .rows[0].state,
+    ).toBe("new");
+  });
+  it("does not retire jobs from a truncated oversized feed", async () => {
+    const {
+      rows: [source],
+    } = await db.query("SELECT id FROM co_sources WHERE board='fixture-board'");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify(Array.from({ length: 501 }, (_, i) => ({ id: i }))),
+      ),
+    );
+    await expect(scanSource(db, source.id)).rejects.toThrow("500");
+    expect(
+      (
+        await db.query("SELECT state FROM co_jobs WHERE source_id=$1", [
+          source.id,
+        ])
+      ).rows[0].state,
+    ).toBe("new");
+  });
+});
+
+describe("owner-reported application outcomes", () => {
+  it("requires approval and evidence, records once, tracks outcomes and exports exact packets", async () => {
+    const fact = (
+      await request("POST", "/facts", {
+        category: "skill",
+        label: "Tracker Python",
+        value: "Python",
+        confirmed: true,
+      })
+    ).json();
+    const job = (
+      await request("POST", "/jobs", {
+        company: "Tracker Fixture",
+        title: "Engineer",
+        location: "Remote",
+        url: "https://example.com/tracker",
+        description: "Build software using Python and work with the team.",
+      })
+    ).json();
+    const packet = (
+      await request("POST", `/jobs/${job.id}/packets`, {
+        factIds: [fact.id],
+        answers: [
+          {
+            question: "Why this role?",
+            answer: "My confirmed Python experience is relevant.",
+          },
+        ],
+      })
+    ).json();
+    const body = {
+      confirmed: true,
+      evidence: "Fixture confirmation reference 123",
+      appliedAt: new Date().toISOString(),
+    };
+    expect(
+      (await request("POST", `/packets/${packet.id}/application`, body))
+        .statusCode,
+    ).toBe(409);
+    await request("POST", `/packets/${packet.id}/approve`, {
+      hash: packet.hash,
+    });
+    expect(
+      (
+        await request("POST", `/packets/${packet.id}/application`, {
+          ...body,
+          confirmed: false,
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await request("POST", `/packets/${packet.id}/application`, {
+          ...body,
+          appliedAt: new Date(Date.now() + 86400000).toISOString(),
+        })
+      ).statusCode,
+    ).toBe(400);
+    const first = await request(
+      "POST",
+      `/packets/${packet.id}/application`,
+      body,
+    );
+    expect(first.statusCode).toBe(200);
+    const repeat = await request(
+      "POST",
+      `/packets/${packet.id}/application`,
+      body,
+    );
+    expect(repeat.json().id).toBe(first.json().id);
+    await request("POST", `/applications/${first.json().id}/status`, {
+      status: "interview",
+      evidence: "Fixture interview invitation received",
+    });
+    const exported = await request("GET", `/packets/${packet.id}/export`);
+    expect(exported.json().hash).toBe(packetHash(exported.json().payload));
+    expect(exported.json().payload.answers[0].question).toBe("Why this role?");
+    await request("DELETE", `/facts/${fact.id}`);
+    const state = (await request("GET", "/state")).json();
+    expect(
+      state.applications.find((a: any) => a.id === first.json().id).status,
+    ).toBe("interview");
+    expect(
+      (await app.inject(`/api/packets/${packet.id}/export`)).statusCode,
+    ).toBe(401);
+  });
+});
+
+describe("encrypted workspace recovery", () => {
+  it("restores originals, provenance and hashes into an empty destination and refuses overwrite", async () => {
+    const passphrase = "synthetic-backup-passphrase-123456";
+    const encrypted = await backupWorkspace(db, cfg.dataDir, passphrase);
+    expect(encrypted.includes(Buffer.from("Tracker Fixture"))).toBe(false);
+    expect(() =>
+      decryptSnapshot(encrypted, "wrong-long-passphrase-for-test"),
+    ).toThrow();
+    const tampered = Buffer.from(encrypted);
+    tampered[tampered.length - 1] ^= 1;
+    expect(() => decryptSnapshot(tampered, passphrase)).toThrow();
+    const snapshot = decryptSnapshot(encrypted, passphrase);
+    const restoreName = "restore_" + randomUUID().replaceAll("-", "");
+    await db.query(`CREATE DATABASE ${restoreName}`);
+    const restoreUrl = new URL(cfg.databaseUrl);
+    restoreUrl.pathname = "/" + restoreName;
+    const restored = createDb(restoreUrl.toString());
+    const dir = await mkdtemp("/tmp/careerops-restore-test-");
+    try {
+      await migrate(restored);
+      const result = await restoreWorkspace(
+        restored,
+        dir + "/files",
+        encrypted,
+        passphrase,
+      );
+      expect(result.documents).toBeGreaterThan(0);
+      for (const doc of snapshot.files)
+        expect(
+          (await readFile(dir + "/files/" + doc.id)).toString("base64"),
+        ).toBe(doc.data);
+      const { rows: packets } = await restored.query(
+        "SELECT * FROM co_packets",
+      );
+      for (const p of packets) expect(packetHash(p.payload)).toBe(p.hash);
+      expect(
+        (await restored.query("SELECT count(*)::int AS n FROM co_imports"))
+          .rows[0].n,
+      ).toBe(snapshot.tables.co_imports.length);
+      await expect(
+        restoreWorkspace(restored, dir + "/other", encrypted, passphrase),
+      ).rejects.toThrow("empty");
+      await expect(
+        restoreWorkspace(restored, dir + "/files", encrypted, passphrase),
+      ).rejects.toThrow("does not exist");
+    } finally {
+      await restored.end();
+    }
+  });
+});
+
+describe("reviewed dedicated mail", () => {
+  const mail = {
+    from: "fixture.sender@example.com",
+    to: "fixture.recipient@example.com",
+    subject: "Synthetic follow-up",
+    body: "Following up on my application. Thank you for your time.",
+  };
+  function connect() {
+    vi.stubEnv("ALLOW_GMAIL", "true");
+    vi.stubEnv("GMAIL_CLIENT_ID", "fixture-client");
+    vi.stubEnv("GMAIL_CLIENT_SECRET", "fixture-secret");
+    vi.stubEnv("GMAIL_REFRESH_TOKEN", "fixture-refresh");
+    vi.stubEnv("GMAIL_ADDRESS", mail.from);
+    return vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (url, options) => {
+        if (String(url).includes("oauth2.googleapis.com"))
+          return new Response(
+            JSON.stringify({ access_token: "fixture-access" }),
+          );
+        if (String(url).endsWith("/profile"))
+          return new Response(JSON.stringify({ emailAddress: mail.from }));
+        if (String(url).endsWith("/messages/send"))
+          return new Response(
+            JSON.stringify({ id: "fixture-sent", threadId: "fixture-thread" }),
+          );
+        if (String(url).includes("messages?"))
+          return new Response(
+            JSON.stringify({ messages: [{ id: "fixture-inbox" }] }),
+          );
+        return new Response(
+          JSON.stringify({
+            id: "fixture-inbox",
+            threadId: "fixture-thread",
+            snippet: "Fixture interview invitation",
+            internalDate: String(Date.now()),
+            payload: {
+              headers: [
+                { name: "Subject", value: "Fixture invitation" },
+                { name: "From", value: "recruiter@example.com" },
+              ],
+            },
+          }),
+        );
+      });
+  }
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+  it("rejects header injection and requires explicit send confirmation and valid hash", async () => {
+    expect(
+      (
+        await request("POST", "/mail/drafts", {
+          ...mail,
+          subject: "Hi\r\nBcc: victim@example.com",
+        })
+      ).statusCode,
+    ).toBe(400);
+    const draft = (await request("POST", "/mail/drafts", mail)).json();
+    const provider = connect();
+    expect(
+      (
+        await request("POST", `/mail/drafts/${draft.id}/send`, {
+          hash: draft.hash,
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await request("POST", `/mail/drafts/${draft.id}/send`, {
+          hash: "a".repeat(64),
+          confirmed: true,
+        })
+      ).statusCode,
+    ).toBe(422);
+    expect(provider).not.toHaveBeenCalled();
+  });
+  it("verifies account, sends exact reviewed content once, and syncs bounded inbox summaries", async () => {
+    const provider = connect();
+    const draft = (await request("POST", "/mail/drafts", mail)).json();
+    expect(
+      (
+        await request("POST", `/mail/drafts/${draft.id}/send`, {
+          hash: draft.hash,
+          confirmed: true,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await request("POST", `/mail/drafts/${draft.id}/send`, {
+          hash: draft.hash,
+          confirmed: true,
+        })
+      ).json().duplicate,
+    ).toBe(true);
+    const sends = provider.mock.calls.filter((c) =>
+      String(c[0]).endsWith("/messages/send"),
+    );
+    expect(sends).toHaveLength(1);
+    const raw = Buffer.from(
+      JSON.parse(sends[0][1]!.body as string).raw,
+      "base64url",
+    ).toString();
+    expect(raw).toContain("To: " + mail.to);
+    expect(raw).not.toContain("Bcc:");
+    expect(
+      Buffer.from(
+        raw.split("\r\n\r\n")[1].replaceAll("\r\n", ""),
+        "base64",
+      ).toString(),
+    ).toBe(mail.body);
+    expect((await request("POST", "/mail/sync", {})).json().count).toBe(1);
+    const state = (await request("GET", "/state")).json();
+    expect(state.capabilities.emailConnected).toBe(true);
+    expect(state.mailMessages[0].subject).toBe("Fixture invitation");
+    expect(JSON.stringify(state)).not.toContain("fixture-refresh");
+  });
+  it("retains unknown outcomes and refuses retries until owner reconciliation", async () => {
+    const provider = connect();
+    const implementation = provider.getMockImplementation()!;
+    provider.mockImplementation(async (url, opts) => {
+      if (String(url).endsWith("/messages/send"))
+        throw new Error("Simulated connection loss");
+      return implementation(url, opts);
+    });
+    const draft = (await request("POST", "/mail/drafts", mail)).json();
+    const body = { hash: draft.hash, confirmed: true };
+    expect(
+      (await request("POST", `/mail/drafts/${draft.id}/send`, body)).json()
+        .error,
+    ).toContain("unknown");
+    const count = provider.mock.calls.length;
+    expect(
+      (await request("POST", `/mail/drafts/${draft.id}/send`, body)).statusCode,
+    ).toBe(422);
+    expect(provider.mock.calls).toHaveLength(count);
+    expect(
+      (
+        await request("POST", `/mail/drafts/${draft.id}/reconcile`, {
+          confirmed: true,
+          state: "sent",
+          evidence: "Checked synthetic Sent mailbox and found message",
+        })
+      ).statusCode,
+    ).toBe(200);
+  });
+  it("serializes concurrent sends and enforces the daily attempt cap", async () => {
+    const provider = connect();
+    const draft = (await request("POST", "/mail/drafts", mail)).json();
+    const results = await Promise.all(
+      [1, 2].map(() =>
+        request("POST", `/mail/drafts/${draft.id}/send`, {
+          hash: draft.hash,
+          confirmed: true,
+        }),
+      ),
+    );
+    expect(results.some((r) => r.statusCode === 200)).toBe(true);
+    expect(
+      provider.mock.calls.filter((c) =>
+        String(c[0]).endsWith("/messages/send"),
+      ),
+    ).toHaveLength(1);
+    const next = (await request("POST", "/mail/drafts", mail)).json();
+    expect(
+      (
+        await request("POST", `/mail/drafts/${next.id}/send`, {
+          hash: next.hash,
+          confirmed: true,
+        })
+      ).json().error,
+    ).toContain("limit");
   });
 });

@@ -23,6 +23,8 @@ import {
 } from "./domain.js";
 import { analyzeDocument, modelReady } from "./models.js";
 import { assessJob, jobSnapshot } from "./matching.js";
+import { saveDraft, sendDraft, syncInbox, mailConfigured } from "./mail.js";
+import { greenhouseForm } from "./forms.js";
 import { storeDocument } from "./documents.js";
 
 const fail = (statusCode: number, message: string) =>
@@ -143,6 +145,10 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
       proposals,
       usage,
       assessments,
+      applications,
+      mailDrafts,
+      mailMessages,
+      mailState,
     ] = await Promise.all([
       db.query(
         "SELECT d.*, (SELECT count(*)::int FROM co_imports i WHERE i.document_id=d.id) AS imports FROM co_documents d ORDER BY created_at DESC",
@@ -164,8 +170,23 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
       db.query(
         "SELECT DISTINCT ON(job_id) * FROM co_assessments ORDER BY job_id,created_at DESC",
       ),
+      db.query(
+        "SELECT a.*,j.title,j.company,j.url FROM co_applications a JOIN co_packets p ON p.id=a.packet_id JOIN co_jobs j ON j.id=p.job_id ORDER BY a.applied_at DESC",
+      ),
+      db.query(
+        "SELECT * FROM co_mail_drafts ORDER BY created_at DESC LIMIT 100",
+      ),
+      db.query(
+        "SELECT * FROM co_mail_messages ORDER BY received_at DESC LIMIT 50",
+      ),
+      db.query("SELECT * FROM co_mail_state"),
     ]);
     return {
+      mailDrafts: mailDrafts.rows,
+      mailMessages: mailMessages.rows,
+      mailAccount: process.env.GMAIL_ADDRESS || "",
+      mailVerifiedAt: mailState.rows[0]?.verified_at || null,
+      applications: applications.rows,
       documents: documents.rows,
       facts: facts.rows,
       jobs: jobs.rows,
@@ -191,7 +212,11 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
         profileReview: true,
         packetApproval: true,
         automaticSubmission: false,
-        emailConnected: false,
+        emailConnected:
+          mailConfigured() &&
+          mailState.rows[0]?.address?.toLowerCase() ===
+            process.env.GMAIL_ADDRESS?.toLowerCase(),
+        emailConfigured: mailConfigured(),
         aiConnected: modelReady(),
       },
       operatingMode:
@@ -390,6 +415,27 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
     );
     return { id };
   });
+  app.post("/api/jobs/:id/form", async (req) => {
+    const id = idSchema.parse((req.params as any).id);
+    const {
+      rows: [job],
+    } = await db.query(
+      "SELECT j.*,s.provider,s.board FROM co_jobs j LEFT JOIN co_sources s ON s.id=j.source_id WHERE j.id=$1",
+      [id],
+    );
+    if (!job) throw fail(404, "Job not found.");
+    if (job.state === "closed") throw fail(409, "This listing is closed.");
+    if (job.provider !== "greenhouse")
+      throw fail(
+        409,
+        "Question discovery currently supports imported Greenhouse listings. Review other forms on the employer site.",
+      );
+    try {
+      return await greenhouseForm(job.board, job.external_id);
+    } catch (e) {
+      throw fail(422, (e as Error).message);
+    }
+  });
   app.post("/api/jobs/:id/assess", async (req) => {
     const id = idSchema.parse((req.params as any).id);
     if (!modelReady())
@@ -444,6 +490,8 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
         rows: [job],
       } = await c.query("SELECT * FROM co_jobs WHERE id=$1", [jobId]);
       if (!job) throw fail(404, "Job not found.");
+      if (job.state === "closed")
+        throw fail(409, "This listing is closed. Choose an open opportunity.");
       const { rows: facts } = await c.query(
         "SELECT id,category,label,value,version FROM co_facts WHERE active AND id=ANY($1::uuid[]) ORDER BY array_position($1::uuid[],id)",
         [input.factIds],
@@ -513,6 +561,7 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
         rows: [job],
       } = await c.query("SELECT * FROM co_jobs WHERE id=$1", [packet.job_id]);
       if (
+        job?.state === "closed" ||
         packet.state === "stale" ||
         packet.profile_version !== settings.profile_version ||
         packet.hash !== hash ||
@@ -549,6 +598,142 @@ export async function createApp(db: Db, cfg: Config, queue: Queue) {
     } = await db.query("SELECT payload FROM co_packets WHERE id=$1", [id]);
     if (!p) throw fail(404, "Packet not found.");
     return reply.type("text/html").send(resumeHtml(p.payload));
+  });
+  // Explicit owner-reported outcomes are separate from immutable draft approvals.
+  app.post("/api/packets/:id/application", async (req) => {
+    const packetId = idSchema.parse((req.params as any).id);
+    const input = z
+      .object({
+        confirmed: z.literal(true),
+        evidence: z.string().trim().min(10).max(3000),
+        appliedAt: z.iso.datetime(),
+        followUpAt: z.iso.datetime().nullable().default(null),
+      })
+      .parse(req.body);
+    if (new Date(input.appliedAt).getTime() > Date.now() + 60000)
+      throw fail(400, "An application cannot be recorded in the future.");
+    return transaction(db, async (c) => {
+      await c.query("SELECT * FROM co_settings FOR UPDATE");
+      const {
+        rows: [packet],
+      } = await c.query("SELECT * FROM co_packets WHERE id=$1 FOR UPDATE", [
+        packetId,
+      ]);
+      if (!packet) throw fail(404, "Packet not found.");
+      const {
+        rows: [existing],
+      } = await c.query("SELECT id FROM co_applications WHERE packet_id=$1", [
+        packetId,
+      ]);
+      if (existing) return { id: existing.id, duplicate: true };
+      if (packet.state !== "approved")
+        throw fail(
+          409,
+          "Approve the exact packet used before recording its submission.",
+        );
+      const id = randomUUID();
+      await c.query(
+        "INSERT INTO co_applications(id,packet_id,status,evidence,applied_at,follow_up_at) VALUES($1,$2,'submitted',$3,$4,$5)",
+        [id, packetId, input.evidence, input.appliedAt, input.followUpAt],
+      );
+      await c.query(
+        "INSERT INTO co_audit(action,entity_id,detail) VALUES('application_reported',$1,$2)",
+        [id, { source: "owner", packetHash: packet.hash }],
+      );
+      return { id, reportedByOwner: true };
+    });
+  });
+  app.post("/api/applications/:id/status", async (req) => {
+    const id = idSchema.parse((req.params as any).id);
+    const input = z
+      .object({
+        status: z.enum([
+          "submitted",
+          "interview",
+          "offer",
+          "rejected",
+          "withdrawn",
+        ]),
+        evidence: z.string().trim().min(10).max(3000),
+        followUpAt: z.iso.datetime().nullable().default(null),
+      })
+      .parse(req.body);
+    await transaction(db, async (c) => {
+      const result = await c.query(
+        "UPDATE co_applications SET status=$2,evidence=$3,follow_up_at=$4,updated_at=now() WHERE id=$1 RETURNING id",
+        [id, input.status, input.evidence, input.followUpAt],
+      );
+      if (!result.rowCount) throw fail(404, "Application not found.");
+      await c.query(
+        "INSERT INTO co_audit(action,entity_id,detail) VALUES('application_status_updated',$1,$2)",
+        [id, { status: input.status, evidence: input.evidence }],
+      );
+    });
+    return { ok: true };
+  });
+  app.get("/api/packets/:id/export", async (req, reply) => {
+    const id = idSchema.parse((req.params as any).id);
+    const {
+      rows: [packet],
+    } = await db.query("SELECT * FROM co_packets WHERE id=$1", [id]);
+    if (!packet) throw fail(404, "Packet not found.");
+    return reply
+      .header(
+        "Content-Disposition",
+        `attachment; filename="careerops-packet-${id}.json"`,
+      )
+      .send({
+        format: "careerops-review-packet-v1",
+        hash: packet.hash,
+        profileVersion: packet.profile_version,
+        state: packet.state,
+        approvedAt: packet.approved_at,
+        payload: packet.payload,
+        notice:
+          "Draft record only. Approval is not proof of employer submission.",
+      });
+  });
+  app.post("/api/mail/drafts", async (req) => saveDraft(db, req.body));
+  app.post("/api/mail/sync", async () => {
+    try {
+      return await syncInbox(db);
+    } catch (e) {
+      throw fail(422, (e as Error).message);
+    }
+  });
+  app.post("/api/mail/drafts/:id/send", async (req) => {
+    const id = idSchema.parse((req.params as any).id);
+    const { hash } = z
+      .object({ hash: z.string().length(64), confirmed: z.literal(true) })
+      .parse(req.body);
+    try {
+      return await sendDraft(db, id, hash);
+    } catch (e) {
+      throw fail(422, (e as Error).message);
+    }
+  });
+  app.post("/api/mail/drafts/:id/reconcile", async (req) => {
+    const id = idSchema.parse((req.params as any).id);
+    const input = z
+      .object({
+        state: z.enum(["sent", "failed"]),
+        evidence: z.string().trim().min(10).max(3000),
+        confirmed: z.literal(true),
+      })
+      .parse(req.body);
+    await transaction(db, async (c) => {
+      const result = await c.query(
+        "UPDATE co_mail_drafts SET state=$2 WHERE id=$1 AND state='unknown' RETURNING id",
+        [id, input.state],
+      );
+      if (!result.rowCount)
+        throw fail(409, "Only unknown delivery outcomes can be reconciled.");
+      await c.query(
+        "INSERT INTO co_audit(action,entity_id,detail) VALUES('mail_delivery_reconciled',$1,$2)",
+        [id, input],
+      );
+    });
+    return { ok: true };
   });
   app.post("/api/settings/pause", async (req) => {
     const { paused } = z.object({ paused: z.boolean() }).parse(req.body);
